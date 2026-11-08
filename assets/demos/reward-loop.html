@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>System architecture</title>
+<style>
+  :root{
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --ink:#1a1a1a;--ink2:#3a3a44;--muted:#9a9aa0;--muted2:#b8b8be;--border:#e6e6e6;
+    --accent:#3b6fd4;--accent-deep:#2b4fa0;--accent-soft:#eef2fb;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#f4f4f5;font-family:var(--font);color:var(--ink);
+    -webkit-font-smoothing:antialiased;padding:40px 20px;display:flex;justify-content:center;}
+  .card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:30px 30px 26px;
+    width:100%;max-width:980px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 28px rgba(0,0,0,.05);}
+  .title{font-size:19px;font-weight:650;letter-spacing:-.01em;margin:0;line-height:1.3;max-width:720px;}
+  .subtitle{font-size:13.5px;color:var(--muted);margin:7px 0 0;line-height:1.5;max-width:720px;}
+  .legend{display:flex;flex-wrap:wrap;gap:12px 22px;margin-top:16px;font-size:12px;color:var(--muted);}
+  .legend .sw{display:inline-flex;align-items:center;gap:7px;}
+  .legend i{display:inline-block;width:22px;height:0;border-top:1.7px solid #c0c0c8;border-radius:2px;}
+  .legend i.acc{border-top-color:var(--accent);border-top-style:dashed;}
+  #plot{margin-top:6px;}
+  svg{display:block;width:100%;height:auto;font-family:var(--font);}
+
+  /* panels — the soft `#fafafb` shell from grouped-bars, used to enclose
+     each functional cluster instead of colored tints. */
+  .panel rect{fill:#fafafb;stroke:var(--border);stroke-width:1;}
+  .panel .pname{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+    fill:#9a9aa0;}
+  .panel .pmeta{font-size:10.5px;font-family:var(--mono);fill:var(--muted2);font-weight:500;}
+
+  /* nodes — peer (grey-gradient) by default; spotlighted = accent gradient */
+  .node .box{fill:url(#peerGrad);stroke:#cdd0d6;stroke-width:1;transition:filter .18s;}
+  .node .label{font-size:13.5px;font-weight:650;fill:#1a1a1a;}
+  .node .sub{font-size:10.5px;font-family:var(--mono);fill:var(--muted);font-weight:500;letter-spacing:.01em;}
+  .node.spot .box{fill:url(#spotGrad);stroke:var(--accent-deep);}
+  .node.spot .label{fill:#fff;}
+  .node.spot .sub{fill:#dde6f6;}
+  .node:hover .box{filter:brightness(1.04);}
+
+  /* stack effect — peer-colored offset rects behind the spotlighted box */
+  .stack rect{fill:#dee2ea;stroke:#c8cdd6;stroke-width:1;}
+
+  /* chips — sub-component pills inside each node */
+  .chip rect{rx:6;ry:6;fill:#fff;stroke:#e3e3ea;stroke-width:1;}
+  .chip text{font-size:10px;fill:#3a3a44;font-weight:500;}
+  .node.spot .chip rect{fill:rgba(255,255,255,.92);stroke:#b9c6e4;}
+  .node.spot .chip text{fill:#2b4fa0;font-weight:600;}
+
+  /* edges */
+  .edge{fill:none;stroke-width:1.6;stroke-linecap:round;opacity:.9;transition:opacity .2s;}
+  .edge.dim{opacity:.12;}
+  .edge.flow{stroke:#a4a8b3;}              /* default dataflow → muted grey */
+  .edge.spot{stroke:var(--accent);}        /* spotlighted flow → accent */
+  .edge.weight{stroke:var(--accent);stroke-dasharray:5 4;}
+  .edge-label{font-size:11px;fill:#4a4a52;font-weight:500;}
+  .edge-label .mono{font-family:var(--mono);font-size:10px;fill:var(--muted);font-weight:500;}
+
+  .pulse{fill:#fff;stroke-width:1.6;}
+  .pulse.flow{stroke:#a4a8b3;}
+  .pulse.spot{stroke:var(--accent);}
+  .pulse.weight{stroke:var(--accent);}
+
+  /* harness chips — monochrome by default; one spotlighted in accent
+     (matches the grouped-bars "one vendor highlighted, peers grey" idea) */
+  .hbadge rect.bg{fill:#fff;stroke:var(--border);stroke-width:1;}
+  .hbadge rect.sq{fill:#eef0f3;stroke:#d8dbe1;stroke-width:1;}
+  .hbadge text.mono{font-size:9.5px;font-family:var(--mono);font-weight:700;text-anchor:middle;fill:#6b7280;}
+  .hbadge text.nm{font-size:10.5px;font-weight:600;fill:#3a3a44;}
+  .hbadge.spot rect.bg{fill:var(--accent-soft);stroke:#b9c6e4;}
+  .hbadge.spot rect.sq{fill:var(--accent);stroke:var(--accent-deep);}
+  .hbadge.spot text.mono{fill:#fff;}
+  .hbadge.spot text.nm{fill:var(--accent-deep);}
+
+  /* annotation — small italic side note for the diagram */
+  .anno{font-size:11px;fill:var(--muted);font-style:italic;}
+
+  #tip{position:fixed;z-index:50;pointer-events:none;background:#111;color:#fff;border-radius:8px;
+    padding:9px 12px;font-size:12.5px;line-height:1.5;box-shadow:0 6px 20px rgba(0,0,0,.25);
+    opacity:0;transition:opacity .12s;max-width:300px;}
+  #tip b{color:#fff;font-weight:600;}
+  #tip .k{color:#9bb2ff;font-weight:600;}
+  #tip .mono{font-family:var(--mono);font-size:11px;color:#cfcfd4;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h2 class="title" id="title"></h2>
+  <p class="subtitle" id="subtitle"></p>
+  <div class="legend" id="legend"></div>
+  <div id="plot"></div>
+</div>
+<div id="tip"></div>
+
+<script>
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  DATA — edit this block only.                                 ║
+   ╚══════════════════════════════════════════════════════════════╝
+   System / dataflow diagram, restrained palette (one accent + greys).
+   Mark exactly ONE node with `spot:true`; that's the protagonist —
+   everything else reads as a peer (grey gradient). Edge `kind` is
+   "flow" (default, muted grey) | "spot" (accent, for trajectory or any
+   highlighted path) | "weight" (dashed accent).
+
+   • PANELS   — soft `#fafafb` shells (no colored tints) wrapping a
+                functional cluster; `pname` is the small uppercase tag,
+                `pmeta` an optional mono caption.
+   • NODES    — (x,y) is box CENTER in the 1080×600 viewBox; `chips`
+                are sub-component pills inside the box (column-stack
+                by default, or `chipsRow:true` for horizontal); `stack`
+                renders N-1 grey offset rects behind to suggest multi-
+                instance; `spot:true` paints in accent.
+   • HARNESS  — small brand-monogram chips clustered next to a node;
+                mark one with `spot:true` to highlight in accent.       */
+const TITLE    = "时空联合定位的 RL 训练回路";
+const SUBTITLE = "空间奖励挂在时序奖励下游：时间戳不准时，那一帧上的框和谁比 IoU 都没有意义。时序门控是这条依赖关系的显式实现——早期放宽匹配容差以降低奖励稀疏，训练推进后逐步收紧。";
+
+const PANELS = [
+  {x:40,  y:78,  w:250,  h:334, pname:"Rollout"},
+  {x:310, y:78,  w:440,  h:334, pname:"Reward Engine", pmeta:"rule-based + model-based"},
+  {x:770, y:78,  w:270,  h:334, pname:"Verifier"},
+  {x:40,  y:432, w:1000, h:136, pname:"Optimizer"},
+];
+
+const NODES = [
+  {id:"policy", x:165, y:180, w:206, h:116, label:"Policy VLM", sub:"Qwen2.5-VL / Qwen3-VL",
+    chips:["2 fps \u91c7\u6837","think / answer \u7ed3\u6784"],
+    desc:"被训练的策略模型。输入视频帧与查询，输出结构化的时间区间、物体框与推理链。"},
+
+  {id:"group",  x:165, y:334, w:206, h:104, label:"Rollout Group", sub:"G 条候选轨迹", stack:2,
+    chips:["正序帧组","乱序帧组"],
+    desc:"同一问题采 G 条回答做组内比较。乱序帧组只在需要时序对比奖励时才采，成本约为正序组的一半。"},
+
+  {id:"rtemp",  x:420, y:166, w:186, h:94,  label:"时序奖励", sub:"tIoU · NGIoU",
+    chips:["端点偏移惩罚","多段排序匹配"],
+    desc:"tIoU 在 IoU 上乘两个端点偏移惩罚，压掉靠输出宽区间蒙高分的路径；多段任务改用归一化 GIoU，并对段数不符直接罚分。"},
+
+  {id:"rproc",  x:640, y:166, w:186, h:94,  label:"过程奖励", sub:"对推理链本身打分",
+    chips:["时间戳一致性","子序列 DTW","时序敏感性"],
+    desc:"约束推理链真的用到时序证据：答案里的时间戳必须在思考里出现过；或把推理链与参考过程做 DTW 对齐；或打乱边界帧看该推理的 logit 掉多少。"},
+
+  {id:"gate",   x:420, y:302, w:186, h:94,  label:"时序门控", sub:"spatial reward gate",
+    spot:true,
+    chips:["自适应时序邻近","达标才计空间分"],
+    desc:"训练早期放松时间戳容差以降低奖励稀疏，随训练收紧；只有时间戳足够准，下游空间奖励才计分，避免给「时间错但框对了别的物体」发奖。"},
+
+  {id:"rspat",  x:640, y:302, w:186, h:94,  label:"空间奖励", sub:"gIoU · 实例 ID",
+    chips:["框 IoU","实例 ID 一致性"],
+    desc:"两条路线：直接对预测框算 gIoU；或先给每个实例叠数字标记，让模型只输出 ID，把稠密坐标回归换成实例识别。"},
+
+  {id:"verify", x:905, y:245, w:206, h:146, label:"Verifier", sub:"规则 + referee VLM",
+    chips:["格式正则","判证据相关性","判定位质量"],
+    desc:"规则验证器判格式与可解析性；referee VLM 只在单帧和局部裁剪上做答案条件下的核验，不解原任务。验证器不可靠时，视觉证据奖励反而加剧 reward hacking。"},
+
+  {id:"adv",    x:300, y:498, w:276, h:86,  label:"优势估计", sub:"组内归一化",
+    chips:["软优势整形","GT 作 off-policy","难度感知缩放"], chipsRow:true,
+    desc:"组内奖励全同则优势恒为零，样本白采。三种补救：把 GT 解塞进组里并做非线性软优势整形、按任务与样本难度重标定、或直接回归优势去掉 clip。"},
+
+  {id:"upd",    x:760, y:498, w:276, h:86,  label:"策略更新", sub:"GRPO / GSPO / DAPO loss",
+    chips:["token 级 loss","序列级重要性比"], chipsRow:true,
+    desc:"奖励定义在整条轨迹上时，GSPO 的序列级重要性比与裁剪比 GRPO 的 token 级更匹配；Time-R1 实测 DAPO 的 token 级 loss 优于 GRPO 的 sample 级。"},
+];
+
+const EDGES = [
+  {from:"policy", to:"group",  kind:"flow",   curve:0,    label:"采样 G 条",     labelAt:.5,  labelDx:30,  pulse:true},
+  {from:"group",  to:"rtemp",  kind:"flow",   curve:-.20, label:"预测区间",      labelAt:.5,  labelDy:-10, pulse:true},
+  {from:"group",  to:"rproc",  kind:"flow",   curve:-.34, label:"推理链",        labelAt:.30, labelDy:-12, pulse:true},
+  {from:"rtemp",  to:"gate",   kind:"spot",   curve:0,    label:"tIoU 是否达标",  labelAt:.5,  labelDx:40,  pulse:true},
+  {from:"gate",   to:"rspat",  kind:"spot",   curve:0,    label:"达标才计分",     labelAt:.5,  labelDy:-10, pulse:true},
+  {from:"rspat",  to:"verify", kind:"flow",   curve:.16,  label:"框 + 时间戳",    labelAt:.5,  labelDy:16,  pulse:true},
+  {from:"rproc",  to:"verify", kind:"flow",   curve:-.16, label:"证据 claim",     labelAt:.5,  labelDy:-10, pulse:true},
+  {from:"verify", to:"adv",    kind:"flow",   curve:.30,  label:"标量奖励",       labelAt:.66, labelDy:-10, pulse:true},
+  {from:"adv",    to:"upd",    kind:"flow",   curve:0,    label:"组内优势",       labelAt:.5,  labelDy:-10, pulse:true},
+  {from:"upd",    to:"policy", kind:"weight", curve:.30,  label:"参数更新",       labelAt:.5,  labelDx:-20, pulse:false},
+];
+
+const HARNESS = [];
+
+const ANNOS = [
+  // small italic side notes — text + leader-line anchor (optional)
+  // {x, y, text, anchor:{x,y}}
+];
+
+const LEGEND = [
+  {kind:"flow",   label:"dataflow"},
+  {kind:"spot",   label:"trajectory (the new wire)"},
+  {kind:"weight", label:"weight sync"},
+];
+/* ────────────────────────── end DATA ────────────────────────── */
+
+const tip=document.getElementById("tip");
+function showTip(html,e){tip.innerHTML=html;tip.style.opacity=1;moveTip(e);}
+function moveTip(e){const pad=14;let x=e.clientX+pad,y=e.clientY+pad;const r=tip.getBoundingClientRect();
+  if(x+r.width>innerWidth)x=e.clientX-r.width-pad;if(y+r.height>innerHeight)y=e.clientY-r.height-pad;
+  tip.style.left=x+"px";tip.style.top=y+"px";}
+function hideTip(){tip.style.opacity=0;}
+addEventListener("scroll",hideTip,true);
+
+document.getElementById("title").textContent=TITLE;
+document.getElementById("subtitle").textContent=SUBTITLE;
+
+const legEl=document.getElementById("legend");
+LEGEND.forEach(L=>{
+  const cls=L.kind==='flow'?'':'acc';
+  const s=document.createElement("span");s.className="sw";
+  s.innerHTML=`<i class="${cls}"></i>${L.label}`;
+  legEl.appendChild(s);
+});
+
+// ----- geometry helpers -----
+const VBW=1080, VBH=600;
+const nodeById=Object.fromEntries(NODES.map(n=>[n.id,n]));
+
+function edgePoint(node, tx, ty){
+  const dx=tx-node.x, dy=ty-node.y;
+  if(dx===0&&dy===0) return {x:node.x,y:node.y};
+  const hw=node.w/2, hh=node.h/2;
+  const sx=dx===0?Infinity:hw/Math.abs(dx);
+  const sy=dy===0?Infinity:hh/Math.abs(dy);
+  const s=Math.min(sx,sy);
+  return {x:node.x+dx*s, y:node.y+dy*s};
+}
+function buildPath(a,b,curve){
+  const dx=b.x-a.x, dy=b.y-a.y;
+  const L=Math.hypot(dx,dy)||1;
+  const nx=-dy/L, ny=dx/L;
+  const k=(curve||0)*L*0.22;
+  const cx=(a.x+b.x)/2+nx*k, cy=(a.y+b.y)/2+ny*k;
+  return {d:`M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`, cx,cy};
+}
+
+// ----- svg root -----
+const NS="http://www.w3.org/2000/svg";
+const svg=document.createElementNS(NS,"svg");
+svg.setAttribute("viewBox",`0 0 ${VBW} ${VBH}`);
+document.getElementById("plot").appendChild(svg);
+
+// gradients + arrow markers (one set; edges pick by class)
+const defs=document.createElementNS(NS,"defs");
+defs.innerHTML=`
+  <linearGradient id="spotGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#4a7be0"/>
+    <stop offset="100%" stop-color="#2b4fa0"/>
+  </linearGradient>
+  <linearGradient id="peerGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#ffffff"/>
+    <stop offset="100%" stop-color="#f4f5f8"/>
+  </linearGradient>
+  <marker id="arr-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#a4a8b3"/>
+  </marker>
+  <marker id="arr-spot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#3b6fd4"/>
+  </marker>
+  <marker id="arr-weight" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M0,0 L10,5 L0,10 z" fill="#3b6fd4"/>
+  </marker>
+`;
+svg.appendChild(defs);
+
+// ----- panels (back layer) -----
+const panelsLayer=document.createElementNS(NS,"g");
+svg.appendChild(panelsLayer);
+PANELS.forEach(P=>{
+  const g=document.createElementNS(NS,"g"); g.setAttribute("class","panel");
+  const r=document.createElementNS(NS,"rect");
+  r.setAttribute("x",P.x);r.setAttribute("y",P.y);
+  r.setAttribute("width",P.w);r.setAttribute("height",P.h);
+  r.setAttribute("rx",12);r.setAttribute("ry",12);
+  g.appendChild(r);
+  if(P.pname){
+    const t=document.createElementNS(NS,"text");
+    t.setAttribute("x",P.x+14);t.setAttribute("y",P.y+22);
+    t.setAttribute("class","pname");
+    t.textContent=P.pname;
+    g.appendChild(t);
+  }
+  if(P.pmeta){
+    const m=document.createElementNS(NS,"text");
+    // place mono caption right after pname (rough x offset by char count)
+    const off = (P.pname||"").length * 7.2 + 30;
+    m.setAttribute("x",P.x+off);m.setAttribute("y",P.y+22);
+    m.setAttribute("class","pmeta");
+    m.textContent="· "+P.pmeta;
+    g.appendChild(m);
+  }
+  panelsLayer.appendChild(g);
+});
+
+// ----- edges -----
+const edgesLayer=document.createElementNS(NS,"g");
+svg.appendChild(edgesLayer);
+const pathEls=[];
+EDGES.forEach(E=>{
+  const A=nodeById[E.from], B=nodeById[E.to];
+  const rough=buildPath({x:A.x,y:A.y},{x:B.x,y:B.y},E.curve||0);
+  const start=edgePoint(A, rough.cx, rough.cy);
+  const end  =edgePoint(B, rough.cx, rough.cy);
+  const path=buildPath(start,end,E.curve||0);
+  const p=document.createElementNS(NS,"path");
+  p.setAttribute("d",path.d);
+  p.setAttribute("class",`edge ${E.kind}`);
+  p.setAttribute("marker-end",`url(#arr-${E.kind})`);
+  edgesLayer.appendChild(p);
+  pathEls.push({el:p,edge:E,start,end,cx:path.cx,cy:path.cy});
+
+  if(E.label){
+    const t=E.labelAt??.5;
+    const lx=(1-t)*(1-t)*start.x + 2*(1-t)*t*path.cx + t*t*end.x + (E.labelDx||0);
+    const ly=(1-t)*(1-t)*start.y + 2*(1-t)*t*path.cy + t*t*end.y + (E.labelDy||-8);
+    const tx=document.createElementNS(NS,"text");
+    tx.setAttribute("x",lx);tx.setAttribute("y",ly);
+    tx.setAttribute("text-anchor","middle");
+    tx.setAttribute("class","edge-label");
+    tx.setAttribute("paint-order","stroke");
+    tx.setAttribute("stroke","#fff");tx.setAttribute("stroke-width","3.5");
+    tx.setAttribute("stroke-linejoin","round");
+    tx.textContent=E.label;
+    edgesLayer.appendChild(tx);
+    if(E.sublabel){
+      const sub=document.createElementNS(NS,"text");
+      sub.setAttribute("x",lx);sub.setAttribute("y",ly+13);
+      sub.setAttribute("text-anchor","middle");
+      sub.setAttribute("class","edge-label");
+      sub.setAttribute("paint-order","stroke");
+      sub.setAttribute("stroke","#fff");sub.setAttribute("stroke-width","3.5");
+      sub.setAttribute("stroke-linejoin","round");
+      const span=document.createElementNS(NS,"tspan");
+      span.setAttribute("class","mono");
+      span.textContent=E.sublabel;
+      sub.appendChild(span);
+      edgesLayer.appendChild(sub);
+    }
+  }
+});
+
+// pulses
+const pulses=[];
+pathEls.forEach((pe,i)=>{
+  if(!pe.edge.pulse) return;
+  const c=document.createElementNS(NS,"circle");
+  c.setAttribute("r","3.2");
+  c.setAttribute("class",`pulse ${pe.edge.kind}`);
+  edgesLayer.appendChild(c);
+  pulses.push({circle:c,path:pe.el,phase:(i*0.17)%1});
+});
+const TRAVEL_MS=3000;
+function animate(ts){
+  pulses.forEach(p=>{
+    const L=p.path.getTotalLength();
+    const t=((ts/TRAVEL_MS)+p.phase)%1;
+    const pt=p.path.getPointAtLength(t*L);
+    p.circle.setAttribute("cx",pt.x);
+    p.circle.setAttribute("cy",pt.y);
+  });
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+// widen edge hit area for tooltips
+pathEls.forEach(pe=>{
+  const hit=document.createElementNS(NS,"path");
+  hit.setAttribute("d",pe.el.getAttribute("d"));
+  hit.setAttribute("fill","none");
+  hit.setAttribute("stroke","transparent");
+  hit.setAttribute("stroke-width","18");
+  hit.style.cursor="default";
+  edgesLayer.appendChild(hit);
+  const A=nodeById[pe.edge.from].label, B=nodeById[pe.edge.to].label;
+  const extra=pe.edge.sublabel?`<br><span class="mono">${pe.edge.sublabel}</span>`:"";
+  hit.addEventListener("mouseenter",e=>showTip(
+    `<span class="k">${A}</span> → <span class="k">${B}</span><br>${pe.edge.label||""}${extra}`,e));
+  hit.addEventListener("mousemove",moveTip);
+  hit.addEventListener("mouseleave",hideTip);
+});
+
+// ----- nodes -----
+const nodesLayer=document.createElementNS(NS,"g");
+svg.appendChild(nodesLayer);
+NODES.forEach(N=>{
+  const x=N.x-N.w/2, y=N.y-N.h/2;
+
+  // stack effect
+  if(N.stack && N.stack>1){
+    const stackG=document.createElementNS(NS,"g");
+    stackG.setAttribute("class","stack");
+    for(let i=N.stack-1;i>=1;i--){
+      const sr=document.createElementNS(NS,"rect");
+      const off=i*6;
+      sr.setAttribute("x",x+off);sr.setAttribute("y",y-off);
+      sr.setAttribute("width",N.w);sr.setAttribute("height",N.h);
+      sr.setAttribute("rx",12);sr.setAttribute("ry",12);
+      sr.setAttribute("opacity", 0.72 - i*0.20);
+      stackG.appendChild(sr);
+    }
+    nodesLayer.appendChild(stackG);
+  }
+
+  const g=document.createElementNS(NS,"g");
+  g.setAttribute("class",`node ${N.spot?"spot":""}`);
+  g.setAttribute("transform",`translate(${x},${y})`);
+
+  const r=document.createElementNS(NS,"rect");
+  r.setAttribute("class","box");
+  r.setAttribute("width",N.w);r.setAttribute("height",N.h);
+  r.setAttribute("rx",12);r.setAttribute("ry",12);
+  g.appendChild(r);
+
+  const lab=document.createElementNS(NS,"text");
+  lab.setAttribute("x",N.w/2);lab.setAttribute("y",26);
+  lab.setAttribute("text-anchor","middle");
+  lab.setAttribute("class","label");
+  lab.textContent=N.label;
+  g.appendChild(lab);
+
+  if(N.sub){
+    const sub=document.createElementNS(NS,"text");
+    sub.setAttribute("x",N.w/2);sub.setAttribute("y",43);
+    sub.setAttribute("text-anchor","middle");
+    sub.setAttribute("class","sub");
+    sub.textContent=N.sub;
+    g.appendChild(sub);
+  }
+
+  if(N.chips && N.chips.length){
+    if(N.chipsRow){
+      const padX=14, gap=8, chipH=22;
+      let cx=padX;
+      const cy=N.h-chipH-10;
+      N.chips.forEach(label=>{
+        const w=label.length*6.2+18;
+        const c=document.createElementNS(NS,"g"); c.setAttribute("class","chip");
+        const cr=document.createElementNS(NS,"rect");
+        cr.setAttribute("x",cx);cr.setAttribute("y",cy);
+        cr.setAttribute("width",w);cr.setAttribute("height",chipH);
+        c.appendChild(cr);
+        const ct=document.createElementNS(NS,"text");
+        ct.setAttribute("x",cx+w/2);ct.setAttribute("y",cy+14);
+        ct.setAttribute("text-anchor","middle");
+        ct.textContent=label;
+        c.appendChild(ct);
+        g.appendChild(c);
+        cx+=w+gap;
+      });
+    } else {
+      const padX=14, chipH=22, gap=7;
+      const startY=60;
+      N.chips.forEach((label,i)=>{
+        const cw=N.w-padX*2;
+        const cy=startY+i*(chipH+gap);
+        const c=document.createElementNS(NS,"g"); c.setAttribute("class","chip");
+        const cr=document.createElementNS(NS,"rect");
+        cr.setAttribute("x",padX);cr.setAttribute("y",cy);
+        cr.setAttribute("width",cw);cr.setAttribute("height",chipH);
+        c.appendChild(cr);
+        const ct=document.createElementNS(NS,"text");
+        ct.setAttribute("x",N.w/2);ct.setAttribute("y",cy+14);
+        ct.setAttribute("text-anchor","middle");
+        ct.textContent=label;
+        c.appendChild(ct);
+        g.appendChild(c);
+      });
+    }
+  }
+
+  g.addEventListener("mouseenter",e=>{
+    pathEls.forEach(pe=>{
+      const inc=pe.edge.from===N.id || pe.edge.to===N.id;
+      pe.el.classList.toggle("dim",!inc);
+    });
+    showTip(`<b>${N.label}</b><br><span style="color:#bbb">${N.sub||""}</span><br>${N.desc||""}`,e);
+  });
+  g.addEventListener("mousemove",moveTip);
+  g.addEventListener("mouseleave",()=>{
+    pathEls.forEach(pe=>pe.el.classList.remove("dim"));
+    hideTip();
+  });
+
+  nodesLayer.appendChild(g);
+});
+
+// ----- harness chips -----
+const hLayer=document.createElementNS(NS,"g");
+svg.appendChild(hLayer);
+HARNESS.forEach(B=>{
+  const g=document.createElementNS(NS,"g"); g.setAttribute("class",`hbadge ${B.spot?"spot":""}`);
+  const bg=document.createElementNS(NS,"rect");
+  bg.setAttribute("class","bg");
+  bg.setAttribute("x",B.x);bg.setAttribute("y",B.y);
+  bg.setAttribute("width",B.w);bg.setAttribute("height",26);
+  bg.setAttribute("rx",6);bg.setAttribute("ry",6);
+  g.appendChild(bg);
+  const sq=document.createElementNS(NS,"rect");
+  sq.setAttribute("class","sq");
+  sq.setAttribute("x",B.x+4);sq.setAttribute("y",B.y+4);
+  sq.setAttribute("width",18);sq.setAttribute("height",18);
+  sq.setAttribute("rx",4);sq.setAttribute("ry",4);
+  g.appendChild(sq);
+  const mt=document.createElementNS(NS,"text");
+  mt.setAttribute("class","mono");
+  mt.setAttribute("x",B.x+13);mt.setAttribute("y",B.y+17);
+  mt.textContent=B.mono;
+  g.appendChild(mt);
+  const nm=document.createElementNS(NS,"text");
+  nm.setAttribute("class","nm");
+  nm.setAttribute("x",B.x+28);nm.setAttribute("y",B.y+17);
+  nm.textContent=B.name;
+  g.appendChild(nm);
+  hLayer.appendChild(g);
+});
+</script>
+</body>
+</html>
+

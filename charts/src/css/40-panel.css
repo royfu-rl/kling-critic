@@ -1,0 +1,43 @@
+/* 右侧详情面板：Rubric 卡片、Rules 分组、行内代码片、Demo 按钮 */
+  /* panel content */
+  .panel .ph{color:var(--ink-soft);font-size:12.5px}
+  .panel h3{margin:0 0 2px;font-size:15px;font-weight:750;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .panel .path{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin:0 0 14px;word-break:break-all}
+  .panel .kv{margin:12px 0}
+  .panel .kv .k{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:4px}
+  .card{border-radius:10px;padding:11px 13px;font-size:12.5px;margin:8px 0}
+  .card.warn{background:var(--warn-soft);border:1px solid var(--warn-line)}
+  .card.dup{background:var(--dup-soft);border:1px solid var(--dup-line)}
+  .card.stmt{background:var(--stmt-soft);border:1px solid var(--stmt-line)}
+  .card.stmt .fix b{color:var(--stmt)}
+  /* Rubric 释义：解释标签本身（区别于 warn 色的边界规则） */
+  .card.rub{background:var(--bg-soft);border:1px solid var(--line)}
+  .card.rub-todo{background:repeating-linear-gradient(135deg,#fafbfc,#fafbfc 6px,#f3f5f7 6px,#f3f5f7 12px);
+                 border-style:dashed;color:var(--ink-soft)}
+  .card.rub .todo{font-size:9.5px;font-weight:700;background:#eef1f4;color:var(--ink-faint);
+                  padding:1px 6px;border-radius:999px;letter-spacing:.02em}
+  .card .ct{font-weight:750;margin-bottom:5px;display:flex;align-items:center;gap:6px}
+  /* 规则 / rubric 文本里的 `标签名` 渲染成行内代码片 */
+  .panel code{font-family:var(--mono);font-size:11px;background:#fff;border:1px solid var(--line);
+    border-radius:5px;padding:1px 5px;color:var(--ink);white-space:nowrap}
+  /* Rules 按动词分组：组标题 + 条目列表 */
+  .rgrp{margin:7px 0}
+  .rgrp .rv{font-size:10.5px;font-weight:800;letter-spacing:.03em;color:var(--warn);
+    background:var(--warn-soft);border:1px solid var(--warn-line);border-radius:5px;
+    padding:1px 6px;display:inline-block;margin-bottom:4px}
+  .rgrp ul{margin:0;padding-left:16px}
+  .rgrp li{font-size:12.5px;line-height:1.62;margin:3px 0}
+  .rgrp li .lvl{font-size:9.5px;color:var(--ink-faint);margin-left:4px}
+  /* symptoms 列表 */
+  .syms{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+  .syms span{font-size:11px;background:#fff;border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+  .rel{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+  .rel .r{font-size:11px;background:#fff;border:1px solid var(--line);border-radius:6px;padding:2px 7px}
+  .fix{font-size:12px;color:var(--ink);margin-top:6px}
+  .fix b{color:var(--warn)}
+  .card.dup .fix b{color:var(--dup)}
+  .demobtn{appearance:none;width:100%;margin-top:6px;border:1px solid var(--brand);background:var(--brand);color:#fff;font-family:inherit;
+           font-size:12.5px;font-weight:700;padding:9px 12px;border-radius:9px;cursor:pointer;transition:.12s;display:flex;align-items:center;justify-content:center;gap:7px}
+  .demobtn:hover{filter:brightness(1.06)}
+  .demobtn:disabled{background:#fff;color:var(--ink-faint);border-color:var(--line);cursor:default}
+

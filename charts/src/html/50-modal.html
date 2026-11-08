@@ -1,0 +1,21 @@
+<!-- 标注 modal：视频 + 帧级 grounding 框 + 帧级 JSON
+     组件来自 skills/chart-blocks/templates/frame-annotation-modal，
+     相比旧版新增：画面上的 grounding 框叠加层（#v-layer）与 #v-wrap 定位锚点。
+     黄/绿灯为装饰，无 handler（macOS 观感），只有红灯关闭。 -->
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="mhead">
+      <div class="traflights">
+        <button class="tfl tfl-r" id="m-close" aria-label="关闭" title="关闭"></button>
+        <button class="tfl tfl-y" aria-label="最小化" title="最小化"></button>
+        <button class="tfl tfl-g" aria-label="最大化" title="最大化"></button>
+      </div>
+      <span class="mt" id="m-title">标注数据</span>
+      <span class="mbadge" id="m-badge" style="display:none"></span>
+      <span class="mp" id="m-path"></span>
+    </div>
+    <div class="demostrip" id="m-strip"></div>
+    <!--PLAYER--></div>
+  </div>
+</div>
+

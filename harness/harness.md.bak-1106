@@ -1,0 +1,110 @@
+## Contents
+
+- [Goal](#goal)
+- [Survey](#survey)
+- [Method](#method)
+- [Workflow](#workflow)
+- [Harness](#harness)
+  - [Tools](#tools)
+  - [Rubric](#rubric)
+  - [Trajectory](#trajectory)
+- [Insights](#insights)
+
+### Goal
+构建一套针对多模态 omni 生成任务的[视频质检系统](https://kml-dtmachine-20133-prod-1.kmlhb2az1l3-2.corp.kuaishou.com/studio.html)，支持输出帧粒度 Reasoning 与 Grounding 质检结果；优化迭代 Harness 环境资产，回流高质量轨迹。
+
+### Survey
+
+同行把「评测 agent」做成什么样、工具怎么接进去、判定粒度切到多细，先看这篇调研：
+
+<div align="center">
+  <iframe src="../charts/doc-preview.html"
+          data-src="surveys/agent-eval.html#granularity"
+          data-name="Video Evaluation Agents"
+          data-path="surveys/agent-eval.html"
+          style="width:100%;height:620px;border:1px solid #e4e7ec;border-radius:12px;" title="Video Evaluation Agents · 预览"></iframe>
+</div>
+
+### Method
+核心思想是基础感知（召回证据）和偏好对齐（证据判别）解耦, 从可能形成能够 scaling 的方案, 偏好对齐阶段受不同业务时期模型的关注程度，评测规则的动态演化影响，无法形成稳定的规则。
+
+另外在复杂庞大的评测体系下，需要先测验不同尺寸 / 不同类别的模型能力可达边界，预先建立基础认知。什么维度的评测感知适用于 VLM（以及多大尺寸的 VLM 能做这个事），什么维度的感知应该用 yolo-world 之类的传统 CV 方法。
+这也是需要明确的，不可能所有的维度都用 T 级别 VLM 模型，成本无法 handle，general model 对某些特定领域的效果也不好。传统 CV 模型对部分需要强世界知识的领域也有局限性等
+
+在 Recall + Verifier 两阶段的主干思想下，进行一定程度的延拓，同步探索：
+- **Workflow**：工具与流程编排先验确定，执行路径固定，适合成熟稳定的质检维度
+- **Auto Planning**：原子能力封装为工具，Agent 在 Harness 中自主规划工具调用，适合探索新维度与复杂场景
+两种模式共享同一套 Harness 环境资产。
+
+### Workflow
+
+主干五个阶段从左到右串起来；虚线框里的两种 MoE 拆分是备选增强，尚未确定是否采用。图可以直接在页面里改，改完下载 `.drawio` 放回 `assets/figures/` 重新生成。
+
+<div align="center">
+  <iframe src="../assets/figures/critic-workflow.html" style="width:100%;height:700px;border:none;border-radius:12px;" title="ABC-Critic Workflow · draw.io"></iframe>
+</div>
+
+Pipline：
+- Video Preprocess
+  - 视频文件检查：读取视频文件，产出 metadata 与完整性判断
+  - 运动感知抽帧：基于视频与 metadata，抽出关键帧、运动窗口与 contact sheet
+  - 拆解提示约束：VLM 读取提示词文本与参考图，产出可验证的约束清单
+- Evidence Recaller(Perception)：
+  - VLM Agent 处理含音轨的整段视频与参考图，产出 observations、issues 与需要重点复核的时间区间
+- Evidence Preprocess
+- Evidence Verifier(Human Alignment)
+  - 逐条核对：VLM 拿约束清单、observations 与 zoom 结论逐条比对，产出 evaluations、scores、rubric 判定与 status
+- Summary：Rubric 聚合 verifier 输出与专项扫描，产出最终分数、status、hard failures，并生成带红框的证据图
+
+### Harness
+
+Harness 是视频质检的脚手架，包含 Tools、Rubric、Trajectory 三类环境资产。
+
+#### Tools
+
+| 工具 | 谁在用 | 负责什么判定 | 为什么不交给 VLM |
+| :--- | :--- | :--- | :--- |
+| **垂域小模型** | ABC-Critic（自研） | 专门用于质检部分通用模型较难识别的顽固垂类标签 | 通用模型在这些垂类上较难识别 |
+| **Grounding DINO**（开放词表检测器） | VideoScience-Judge | 按开放词表验证实体是否存在、属性对不对 | 给的是带坐标的确定答案；VLM 生成坐标不可靠 |
+| **ByteTrack**（多目标追踪） | VideoScience-Judge | 身份关联，量化时空一致性 | 跨帧关联同一实例，VLM 的稀疏帧输入做不到 |
+| **追踪**（未指明具体实现） | VideoArgus | 主体身份、源保留 | 同上 |
+| **RAFT / SEA-RAFT**（光流） | VideoScience-Judge、VideoGen-Eval | 运动方向与幅度；动态程度 | 纯运动统计量，VLM 只能给主观印象 |
+| **CLIP4Clip / CLIP** | VideoScience-Judge、VideoGen-Eval | 文视对齐 | 便宜的稠密相似度 |
+| **DINO 特征** | VideoGen-Eval | 时序一致性 | 特征空间距离 |
+| **LPIPS**（感知相似度） | VideoScience-Judge（有参考视频时） | 与参考的感知差异 | 有参考时比语义判断更准 |
+| **OCR** | VideoArgus、TRACE | 可见文字是否正确 | 给出逐字符读数与位置，可与参考文案逐字比对 |
+| **深度估计** | VideoArgus、VideoGen-Eval | 空间结构合理性 | 几何量，VLM 无法量化 |
+| **感知质量评估（IQA）** | VideoArgus | 画面质量 | 专用模型小三个数量级、相关性不输 |
+| **SAM / SAM2**（分割） | VideoGen-Eval、DirectorBench | 区域切分 | 给出精确边界 |
+| **目标检测**（未指明） | TRACE | 建立可检索的实体时间线 | 同 Grounding DINO |
+| **裁剪 / 放大 / 轮廓叠加** | PriVE-Tools、Skyra（自驱动 probe） | 小区域细看 | 把小目标放大到 VLM 能看清的尺度 |
+| **动态帧采样** | AIGVE-MACS | 按内容变化选关键帧 | 降低帧预算，把算力花在有信息的帧上 |
+
+#### Rubric
+- 蒸馏业务评测的培训文档 -> 沉淀 rubric -> 在金标评测集上超过人评的准召
+
+  在 Harness 中提供可检索的高质量质检案例，其中蒸馏了评测团队的高质量偏好，可从已标注的训练数据 / 评测数据中精筛少量得到。
+
+  - Memory 是 Harness 的核心迭代组件：In-Context Learning 本质上是对 VLM 的输出分布作微调，使其收敛到满足业务偏好的分布。ICL 的作用是挖掘业务理解，持续注入 Few-Shot。
+
+#### Trajectory
+上线 Agentic Critic 评测系统后，人机协同评测，评测人员对机评的结果进行校验修正甚至推翻。从而挖掘难负样本 / 沉淀高质量轨迹。
+
+回流的高质量轨迹为 Critic Agent 在 Harness 中进行 planning 的多轮交互数据，包含了 vlm 视频理解召回证据（recaller），vlm 复核证据对齐评测皮偏好，vlm 调用工具对视频进行预处理 / 对证据进行后处理等数据。因此这部分数据分别可以进行用于训练基础感知，偏好对齐，工具调用，多轮决策规划。这部分数据的核心价值：
+
+1. 基础感知能力增强所需要的数据量级较大，这部分数据的价值更多在于 auto planning 能力的后训练。
+2. 偏好对齐数据可用于训练进行证据复核的 verifier model，也可以构造 pairwise trajectory，对正负轨迹进行对比蒸馏，优化 Harness 中的 Rubric / Skill 文档。
+
+
+> ICL 是一种特殊的 SFT，依据 [*Exploring the Relationship between In-Context Learning and Instruction Tuning*](https://arxiv.org/abs/2311.10367)：
+>
+> - ICL 与 SFT 的 hidden states 相似度很高。
+> - ICL 与 Anchor、SFT 与 Anchor 的 hidden states 相似度都很低。
+
+
+### Insights
+
+- **Auto-Planning Agent**：调用工具的 VLM xxx。选型，尺寸。
+- **Perception VLM**：证据召回的 VLM xxx
+- **Verifier VLM**：对齐评测偏好的 VLM xxx
+

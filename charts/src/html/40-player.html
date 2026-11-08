@@ -1,0 +1,35 @@
+<!-- 播放器主体：视频列（含 grounding 框叠加层）+ 帧级 JSON 列。
+     modal 壳与内联卡片壳共用这一段，DOM id 是两者的契约。 -->
+<div class="mbody">
+  <div class="vcol">
+    <p class="vcap" id="v-cap"></p>
+    <div class="video-wrapper" id="v-wrap">
+      <video id="v-el" playsinline preload="metadata"></video>
+      <div class="annotation-layer" id="v-layer" aria-hidden="true"></div>
+      <div class="vcontrols" id="v-controls">
+        <div class="track" id="v-track">
+          <div class="rail"></div>
+          <div class="rfill" id="v-fill"></div>
+        </div>
+        <div class="crow">
+          <button class="cbtn" id="v-play" aria-label="播放/暂停">▶</button>
+          <span class="ctime" id="v-time">0:00 / 0:00</span>
+          <span class="cspacer"></span>
+          <button class="cbtn" id="v-mute" aria-label="静音">🔊</button>
+        </div>
+      </div>
+    </div>
+    <div class="jumpwrap" id="v-jumps"></div>
+  </div>
+  <div class="jcol">
+    <div class="jcard">
+      <div class="jhead">
+        <span class="jt">frame-annotation.json</span>
+        <span class="jc" id="j-copy" title="复制">⧉</span>
+      </div>
+      <div class="jbodywrap">
+        <pre class="json" id="j-body"><span class="jempty">点击进度条上的问题帧标记查看该帧标注。</span></pre>
+      </div>
+    </div>
+  </div>
+

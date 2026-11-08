@@ -1,0 +1,153 @@
+<!doctype html>
+<html class="light" lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Collapse · 0928 双人盲标账号版</title>
+<link rel="stylesheet" href="./studio.css" />
+<link rel="stylesheet" href="./viewer.css" />
+<link rel="stylesheet" href="./site2.css" />
+<link rel="stylesheet" href="./eval.css" />
+<link rel="stylesheet" href="./blind-account.css" />
+</head>
+<body class="blind-account-page">
+<div class="shell" id="shell">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <span class="logo-mark">SP</span>
+      <span class="logo-text">Collapse · 0928 · 账号版</span>
+      <button class="pane-toggle" id="navToggle" title="收起侧栏">‹</button>
+    </div>
+
+    <section class="blind-account-panel" aria-label="当前标注账号">
+      <p class="blind-account-label">当前标注账号</p>
+      <div class="blind-account-line">
+        <span class="blind-account-name" id="blindAccountName">未登录</span>
+        <span class="blind-account-role" id="blindAccountRole">等待分配</span>
+      </div>
+      <p class="blind-assignment-status" id="blindAssignmentStatus">登录后由服务端分配双人槽位</p>
+      <button class="blind-submit-batch" id="blindSubmitBatch" type="button">提交</button>
+      <button class="super-metrics-open" id="superMetricsOpen" type="button" hidden>质检指标 · L3 切片</button>
+      <button class="blind-switch-account" id="blindSwitchAccount" type="button">切换账号（调试）</button>
+    </section>
+
+    <nav class="nav" id="runNav"></nav>
+    <div class="sidebar-foot">
+      <button class="btn-ghost" id="themeToggle">切换深色</button>
+    </div>
+  </aside>
+
+  <main class="workbench">
+    <section class="control-col" id="listCol">
+      <header class="col-head">
+        <div>
+          <h1 class="col-title" id="runTitle">—</h1>
+          <p class="col-sub" id="runSub">—</p>
+          <button class="pinds" id="pinDs" type="button">📌 固定数据</button>
+          <button class="lenient" id="lenientBtn" type="button">🩹 格式容错</button>
+          <div class="mtags" id="modelTags"></div>
+        </div>
+        <span class="mode-badge t2v" id="dimBadge">双人盲标</span>
+      </header>
+      <div class="field" id="variantField" hidden>
+        <p class="field-label">数据变体<span class="field-required" id="variantHint">—</span></p>
+        <div class="vtabs" id="variantTabs"></div>
+      </div>
+      <div class="field">
+        <p class="field-label">证据来源<span class="field-required" id="modelHint">—</span>
+          <button class="btn-link" id="modelFilterBtn">筛选模型 ▾</button></p>
+        <div class="mfilter" id="modelFilter" hidden></div>
+        <div class="mtabs" id="modelTabs"></div>
+      </div>
+      <div class="field">
+        <p class="field-label">混淆矩阵 / 标注状态<span class="field-required" id="cmHint">—</span></p>
+        <div id="cmBox"></div>
+      </div>
+      <div class="field super-l3-inline-field" id="superL3InlineField" hidden>
+        <div id="superL3Inline"></div>
+      </div>
+      <div class="field">
+        <p class="field-label">我的样本 <span class="field-count" id="caseCount">0 条</span></p>
+        <div class="vpane-filters" id="caseFilters"></div>
+        <input class="case-search" id="caseSearch" type="search" autocomplete="off"
+               placeholder="在我的任务中按 uid 搜索" />
+        <ul class="case-list" id="caseList"></ul>
+      </div>
+      <div class="field">
+        <p class="field-label">这个 run 是什么</p>
+        <ul class="srcfiles" id="runFacts"></ul>
+      </div>
+    </section>
+
+    <section class="result-col" id="resultPane" data-phase="idle">
+      <header class="result-head">
+        <button class="machine-evidence-toggle" id="machineEvidenceToggle" type="button"
+                aria-pressed="false">机标证据</button>
+        <div class="restore-bar" id="restoreBar" hidden>
+          <button class="pane-restore" id="navRestore" hidden>显示侧栏</button>
+          <button class="pane-restore" id="listRestore" hidden>显示列表</button>
+        </div>
+        <h2 class="result-title" id="caseTitle">Collapse · 0928 双人盲标账号版</h2>
+        <ul class="stage-list" id="caseMeta"></ul>
+      </header>
+      <div class="detail" id="detail"><p class="empty-state">请先登录标注账号…</p></div>
+    </section>
+  </main>
+</div>
+<dialog class="super-metrics-dialog" id="superMetricsDialog" aria-labelledby="superMetricsTitle">
+  <div class="super-metrics-shell">
+    <header class="super-metrics-head">
+      <div>
+        <p class="super-metrics-kicker">SUPER ADMIN · QUALITY REPORT</p>
+        <h2 id="superMetricsTitle">标注团队质检指标</h2>
+        <p id="superMetricsSubtitle">视频级混淆矩阵与证据级集合 PRF</p>
+      </div>
+      <div class="super-metrics-actions">
+        <button id="superMetricsRefresh" type="button">刷新</button>
+        <button id="superMetricsClose" type="button" aria-label="关闭指标面板">关闭</button>
+      </div>
+    </header>
+    <nav class="super-metrics-tabs" aria-label="质检指标视图">
+      <button id="superMetricsOverviewTab" type="button">总体指标</button>
+      <button id="superMetricsL3Tab" type="button">L3 维度切片</button>
+    </nav>
+    <div class="super-metrics-body" id="superMetricsBody">
+      <p class="super-metrics-loading">正在计算当前批次指标…</p>
+    </div>
+  </div>
+</dialog>
+
+<script>
+window.PAGE_FILTER = { onlyDims: ["Collapse · 0928"] };
+window.PAGE_DATA_DIR = "./data-hands/collapse-0928";
+window.PAGE_LOCATOR = true;
+window.PAGE_BLIND_LABELING = true;
+window.PAGE_MULTI_REVIEW = true;
+window.PAGE_REVIEW_LABELS = ["崩坏"];
+window.PAGE_REVIEW_METRIC_L2_TITLE = "崩坏整体 · 有崩坏 / 无";
+window.PAGE_REVIEW_VERDICT_SLICES = {
+  entity: "崩坏",
+  pred_positive: "accept",
+  sev_roles: ["annotator_1", "annotator_2", "reviewer_3"],
+  obvious_min_sev: 3,
+  overall: "崩坏整体",
+  slices: [
+    { label: "崩坏整体", gold: ["accept", "mild"], sev: "any" },
+    { label: "明显崩坏", gold: ["accept"], sev: "obvious" },
+    { label: "轻微崩坏", gold: ["mild"], sev: "mild" },
+  ],
+};
+window.PAGE_BLIND_ACCOUNT = {};
+window.PAGE_DATA_VERSION = "20260928-collapse-v2";
+window.PAGE_REVIEW_SCOPE_PREFIX = "blind-account-v1:./data-hands/collapse-0928";
+window.PAGE_REFERENCE_MANIFEST = "./data-hands/collapse-0928/collapse-0928.jsonl?v=20260929-reference-audit1";
+</script>
+<!-- 博客内嵌静态版：mock-api.js 在浏览器里代替 serve.py 的 /api/*，其余文件与原平台一致（仅去掉 ?v= 缓存戳） -->
+<script src="./mock-data.js"></script>
+<script src="./mock-api.js"></script>
+<script src="./review-storage.js"></script>
+<script src="./blind-account.js"></script>
+<script src="./eval.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,51 @@
+{
+  "_readme": "页头两张柱状图的唯一数据源。改完跑 python3 tools/make_bench_charts.py && python3 build.py。scores 里缺的模型画成「—」；值可以写数字，或 {\"v\": 82.1, \"meta\": \"tooltip 里的说明\"}。models 里 placeholder:true 的柱子画斜纹、tooltip 标「示意值」。",
+
+  "video": {
+    "_source": "kim-leaderboard/output/leaderboard.html（2026-11-03 导出），取标准设置分数（不取斜杠右侧的 Agentic 框架分）",
+    "cols": 3,
+    "note": "Scores from the Perception Benchmark Leaderboard (2026-11-03), standard setting. — = not reported. ABC-Critic V1.0 uses the checkpoint under evaluation (stage2.3-lngram, step 1700).",
+    "models": [
+      {"key": "abc",    "label": "ABC-Critic V1.0",     "logo": "abc", "hi": true, "meta": "stage2.3-lngram · step 1700"},
+      {"key": "g40",    "label": "Gemini 4.0",          "logo": "gemini"},
+      {"key": "g38f",   "label": "Gemini 3.8 Flash",    "logo": "gemini"},
+      {"key": "seed21", "label": "Seed2.1 Pro",         "logo": "seed"},
+      {"key": "qmax",   "label": "Qwen3.8-Max",         "logo": "qwen"},
+      {"key": "qflash", "label": "Qwen3.8-Flash",       "logo": "qwen"},
+      {"key": "gpt",    "label": "GPT-6 Astra / Sol",   "logo": "gpt"},
+      {"key": "ds",     "label": "DeepSeek V4.1-Flash", "logo": "deepseek"}
+    ],
+    "panels": [
+      {"name": "Video-MME",   "dom": "General",    "scores": {"abc": 87.04, "seed21": 89.20, "qmax": 90.40}},
+      {"name": "Video-MME 2", "dom": "General",    "scores": {"abc": 57.91, "g38f": 70.20, "qmax": 68.30, "qflash": 71.00}},
+      {"name": "LVBench",     "dom": "Long video", "scores": {"abc": 74.89, "g40": 91.70, "g38f": 87.10, "qmax": 81.80, "qflash": 76.60,
+                                                            "gpt": {"v": 82.10, "meta": "GPT-5.6 Sol（GPT-6 Astra 未报告）"}}},
+      {"name": "MMVU",        "dom": "Expert",     "scores": {"abc": 77.40, "qmax": 82.40}},
+      {"name": "Video MMMU",  "dom": "Knowledge",  "scores": {"abc": 83.00, "qmax": 88.70}}
+    ]
+  },
+
+  "qc": {
+    "_source": "harness/offline-gemini-elegant/output/report/qc-overview-all（Gemini 4.0 Argon 两阶段简洁链路，视频级 F1）；其余模型是示意数据，待评测后替换",
+    "cols": 4,
+    "average": "Average",
+    "note": "Video-level F1 on Kling's internal QC sets (152–200 videos each). Each QC point is one reward model. Hatched bars are placeholder numbers pending evaluation; Gemini 4.0 Argon is measured with the two-stage pipeline.",
+    "models": [
+      {"key": "abc",    "label": "ABC-Critic V1.0",   "logo": "abc", "hi": true, "placeholder": true},
+      {"key": "argon",  "label": "Gemini 4.0 Argon",  "logo": "gemini"},
+      {"key": "g38f",   "label": "Gemini 3.8 Flash",  "logo": "gemini", "placeholder": true},
+      {"key": "seed21", "label": "Seed2.1 Pro",       "logo": "seed",   "placeholder": true},
+      {"key": "qmax",   "label": "Qwen3.8-Max",       "logo": "qwen",   "placeholder": true}
+    ],
+    "panels": [
+      {"name": "文字不可读", "dom": "Visual quality",  "scores": {"abc": 84.6, "argon": {"v": 82.5, "meta": "0823-nature-3th · 200 条 · P .755 R .909"}, "g38f": 76.1, "seed21": 74.8, "qmax": 73.4}},
+      {"name": "崩坏",       "dom": "Motion quality",  "scores": {"abc": 85.7, "argon": {"v": 83.0, "meta": "0928-review152 · 152 条 · P .757 R .918"}, "g38f": 77.4, "seed21": 76.9, "qmax": 75.2}},
+      {"name": "多镜头",     "dom": "Instruction",     "scores": {"abc": 91.8, "argon": {"v": 92.5, "meta": "1008-200 · 200 条 · P .896 R .956"}, "g38f": 87.9, "seed21": 86.4, "qmax": 85.1}},
+      {"name": "动作",       "dom": "Instruction",     "scores": {"abc": 93.6, "argon": {"v": 94.1, "meta": "1020-200-3th · 200 条 · P .980 R .906"}, "g38f": 89.6, "seed21": 87.7, "qmax": 88.3}},
+      {"name": "运镜",       "dom": "Instruction",     "scores": {"abc": 89.9, "argon": {"v": 88.0, "meta": "1028-200-3th · 200 条 · P .875 R .885"}, "g38f": 82.3, "seed21": 81.0, "qmax": 79.6}},
+      {"name": "主体",       "dom": "Instruction",     "scores": {"abc": 83.1, "argon": {"v": 79.5, "meta": "0930-200-3th · 200 条 · P .921 R .700"}, "g38f": 72.8, "seed21": 71.6, "qmax": 70.9}},
+      {"name": "指代",       "dom": "Instruction",     "scores": {"abc": 87.4, "argon": {"v": 86.3, "meta": "1028-200-3th · 200 条 · P .936 R .800"}, "g38f": 80.5, "seed21": 79.4, "qmax": 78.2}}
+    ]
+  }
+}
+

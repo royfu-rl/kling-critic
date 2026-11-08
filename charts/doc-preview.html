@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档预览</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg-soft:#f6f7f9; --ink:#111418; --ink-soft:#5b636e; --ink-faint:#8b929c;
+    --line:#e4e7ec; --brand:#2f6bff; --brand-soft:#eaf0ff;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;
+       -webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
+
+  /* ── toolbar ── */
+  .bar{flex:none;display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);
+       background:var(--bg-soft)}
+  .file{display:flex;align-items:center;gap:8px;min-width:0}
+  .ico{width:22px;height:22px;border-radius:5px;background:var(--brand);color:#fff;font-size:10px;font-weight:800;
+       display:flex;align-items:center;justify-content:center;flex:none}
+  .name{font-size:13px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .path{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);white-space:nowrap}
+  .spacer{flex:1 1 auto}
+  .zoom{display:flex;align-items:center;gap:4px;flex:none}
+  .zoom button{appearance:none;width:26px;height:26px;border:1px solid var(--line);background:#fff;border-radius:7px;
+        font-family:inherit;font-size:14px;font-weight:700;color:var(--ink-soft);cursor:pointer;padding:0;
+        display:flex;align-items:center;justify-content:center;transition:.12s}
+  .zoom button:hover{border-color:var(--brand);color:var(--brand)}
+  .zval{font-family:var(--mono);font-size:11px;color:var(--ink-soft);min-width:42px;text-align:center}
+  .open{font-size:12px;font-weight:700;color:#fff;background:var(--brand);text-decoration:none;
+        padding:6px 13px;border-radius:8px;white-space:nowrap;flex:none;transition:.14s}
+  .open:hover{background:#1f57d8}
+
+  /* ── page viewport ──────────────────────────────────────────────────────
+     预览 = 真实页面装在一个「桌面视口」大小的 iframe 里，再整体缩小，跟
+     PDF/PPT 预览窗一个意思。
+     iframe 高度必须是一个真实视口高度（900px），不能按文档总高去撑：survey 那边
+     有 min-height:100vh 的区块，iframe 高 16000px 时这些区块就跟着变成 16000px，
+     第一屏把正文全顶到看不见的地方，预览里只剩一根侧栏目录。 */
+  .view{flex:1 1 auto;min-height:0;overflow:auto;background:#eceef1;padding:14px;position:relative}
+  /* transform:scale 不改变布局占位，所以缩放要分两层：外层 .wrap 拿缩放后的
+     实际尺寸（决定居中与滚动条），内层 .sheet 保持 1240px 原始宽度再整体缩小。
+     只用一层的话，元素照 1240px 占位，容器窄于它就会往右溢出被裁掉。 */
+  .wrap{margin:0 auto;overflow:hidden;background:#fff;box-shadow:0 2px 14px rgba(17,20,24,.13);border-radius:3px}
+  .sheet{transform-origin:top left;position:relative}
+  .sheet iframe{display:block;width:100%;border:0;background:#fff}
+  .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+           color:var(--ink-faint);font-size:12.5px;background:#eceef1;z-index:4}
+  @media (max-width:640px){ .path{display:none} }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <div class="file">
+      <span class="ico">HTML</span>
+      <span class="name" id="fname">…</span>
+    </div>
+    <span class="path" id="fpath"></span>
+    <span class="spacer"></span>
+    <div class="zoom">
+      <button id="zo" title="缩小">−</button>
+      <span class="zval" id="zv">45%</span>
+      <button id="zi" title="放大">＋</button>
+    </div>
+    <a class="open" id="open" target="_blank" rel="noopener">打开完整页面 ↗</a>
+  </div>
+
+  <div class="view" id="view">
+    <div class="wrap" id="wrap">
+      <div class="sheet" id="sheet">
+        <iframe id="frame" title="预览" scrolling="yes"></iframe>
+      </div>
+    </div>
+    <div class="loading" id="loading">正在载入预览…</div>
+  </div>
+
+<script>
+// 目标页面与显示名可以外部传入，同一个壳复用给多个文档。
+// 取值顺序：宿主 <iframe> 上的 data-* → URL query → 缺省。
+// data-* 这条是主路径：build.py 会把本文件整个内联成 srcdoc，srcdoc 没有
+// query string，但 srcdoc 与父页同源，所以能从 window.frameElement 读属性。
+const host = (()=>{ try { return window.frameElement || null; } catch(e) { return null; } })();
+const ds   = (host && host.dataset) || {};
+const q    = new URLSearchParams(location.search);
+const SRC  = ds.src  || q.get('src')  || 'surveys/survey.html';
+const NAME = ds.name || q.get('name') || 'RL for Spatio-Temporal Video Grounding';
+const PATH = ds.path || q.get('path') || SRC;
+
+// 按桌面视口渲染再整体缩小 —— 否则窄容器里页面会走响应式布局，
+// 预览出来的不是真实版式。高度取真实视口高度，见上面样式里的说明。
+const PAGE_W = 1240, PAGE_H = 900;
+const STEPS = [0.35,0.45,0.6,0.75,0.9,1];
+let si = 2;
+
+const view=document.getElementById('view'), sheet=document.getElementById('sheet'),
+      wrap=document.getElementById('wrap'), frame=document.getElementById('frame'),
+      loading=document.getElementById('loading');
+
+document.getElementById('fname').textContent = NAME;
+document.getElementById('fpath').textContent = PATH;
+document.getElementById('open').href = SRC;
+
+sheet.style.width = PAGE_W + 'px';
+frame.style.height = PAGE_H + 'px';
+frame.src = SRC;
+
+function applyZoom(){
+  const k = STEPS[si];
+  document.getElementById('zv').textContent = Math.round(k*100) + '%';
+  sheet.style.transform = 'scale(' + k + ')';
+  wrap.style.width  = (PAGE_W * k) + 'px';
+  wrap.style.height = (PAGE_H * k) + 'px';
+}
+document.getElementById('zi').onclick = ()=>{ if(si<STEPS.length-1){si++;applyZoom();} };
+document.getElementById('zo').onclick = ()=>{ if(si>0){si--;applyZoom();} };
+
+frame.addEventListener('load', ()=>{ loading.style.display='none'; });
+// 页签从 display:none 变可见时重摆一次（隐藏时容器宽度是 0，居中算不准）
+if (window.ResizeObserver) new ResizeObserver(applyZoom).observe(view);
+window.addEventListener('resize', applyZoom);
+applyZoom();
+</script>
+</body>
+</html>
+

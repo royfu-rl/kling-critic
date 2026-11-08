@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Benchmark sample</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#111418; --soft:#5b636e; --dim:#9aa1ab;
+    --line:#e4e7ec; --band:#f0f2f5; --brand:#2f6bff;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#131317; --card:#1b1b21; --ink:#f1f1f3; --soft:#a8a8b2; --dim:#71717c;
+    --line:#2b2b33; --band:#22222a; --brand:#6f9dff;}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font-family:var(--sans);color:var(--ink);
+       line-height:1.6;font-size:13.5px;padding:2px;-webkit-font-smoothing:antialiased}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+
+  .top{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--line);
+       background:var(--band);flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+        font-weight:600;color:var(--brand);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+  .top .src{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+
+  .body{display:grid;grid-template-columns:236px 1fr;gap:20px;padding:16px}
+  @media(max-width:620px){.body{grid-template-columns:1fr}}
+
+  video{width:100%;border-radius:8px;background:#000;display:block}
+  .novid{width:100%;aspect-ratio:16/10;border:1px dashed var(--line);border-radius:8px;
+         display:flex;align-items:center;justify-content:center;text-align:center;
+         padding:14px;color:var(--dim);font-size:11.5px;line-height:1.55;background:var(--band)}
+
+  .tl{position:relative;height:16px;background:var(--band);border:1px solid var(--line);
+      border-radius:4px;margin-top:7px;overflow:hidden;cursor:pointer}
+  .tl .seg{position:absolute;top:0;bottom:0;background:var(--brand);opacity:.85}
+  .tl .cur{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);opacity:.75}
+  .ticks{display:flex;justify-content:space-between;font-family:var(--mono);
+         font-size:9.5px;color:var(--dim);margin-top:3px}
+
+  dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:11px 18px;align-items:baseline}
+  dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  dd{margin:0;font-size:14.5px;color:var(--ink)}
+  dd.ans{font-weight:640}
+  dd .t{font-family:var(--mono);font-size:13px;color:var(--brand);font-weight:600}
+  dd .sub{display:block;font-size:11.5px;color:var(--dim);margin-top:2px;font-family:var(--mono)}
+  .opts{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+  .opts span{font-size:11.5px;padding:1px 9px;border-radius:12px;border:1px solid var(--line);color:var(--dim)}
+  .opts span.hit{border-color:var(--brand);color:var(--brand);font-weight:600}
+  .miss{padding:26px 18px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="card" id="card"></div>
+<script src="./demo-data.js"></script>
+<script>
+// 按 URL hash 选一条真实样本（#charades-sta、#nextgqa…）。
+// 只展示三件事：问题、答案、数据集给这条数据的类别。其余一律不放。
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+function render(d){
+  const card = document.getElementById('card');
+  if (!d){ card.innerHTML = '<div class="miss">未找到该样本，URL 需带 hash。</div>'; return; }
+
+  const media = d.clip
+    ? `<video id="v" src="../clips/${d.clip}" controls muted playsinline preload="metadata"></video>
+       <div class="tl" id="tl">${d.gt.map(s=>
+         `<div class="seg" style="left:${s[0]/d.dur*100}%;width:${Math.max(.8,(s[1]-s[0])/d.dur*100)}%"></div>`
+        ).join('')}<div class="cur" id="cur" style="left:0"></div></div>
+       <div class="ticks"><span>0s</span><span>真值区间</span><span>${d.dur}s</span></div>`
+    : `<div class="novid">${d.novid}</div>`;
+
+  card.innerHTML = `
+    <div class="top">
+      <span class="chip">${esc(d.bench)}</span>
+      <span class="src">${esc(d.src)}</span>
+    </div>
+    <div class="body">
+      <div>${media}</div>
+      <dl>
+        <dt>问题</dt><dd>${d.q}${d.opts ? `<div class="opts">${d.opts.map(o=>
+          `<span class="${o.hit?'hit':''}">${esc(o.t)}</span>`).join('')}</div>` : ''}</dd>
+        <dt>答案</dt><dd class="ans">${d.a}</dd>
+        ${d.cat ? `<dt>类别</dt><dd>${d.cat}</dd>` : ''}
+      </dl>
+    </div>`;
+
+  const v = document.getElementById('v');
+  if (v){
+    const cur = document.getElementById('cur'), tl = document.getElementById('tl');
+    v.addEventListener('timeupdate', ()=>{ cur.style.left = (v.currentTime/d.dur*100)+'%'; });
+    tl.addEventListener('click', e=>{
+      const r = tl.getBoundingClientRect();
+      v.currentTime = (e.clientX-r.left)/r.width*d.dur; v.play();
+    });
+  }
+  requestAnimationFrame(()=>parent.postMessage(
+    {type:'kc-height', h:Math.ceil(card.getBoundingClientRect().height)+8}, '*'));
+}
+const pick = () => render(DEMOS[decodeURIComponent(location.hash.slice(1))]);
+addEventListener('hashchange', pick);
+addEventListener('resize', pick);
+pick();
+</script>
+</body>
+</html>
+

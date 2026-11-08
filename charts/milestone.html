@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kling-Critic 建设路线 Milestone</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg-soft:#f6f7f9; --ink:#111418; --ink-soft:#5b636e; --ink-faint:#8b929c;
+    --line:#e4e7ec; --brand:#2f6bff; --brand-soft:#eaf0ff;
+    --done:#12b76a; --done-soft:#e7f8f0; --done-line:#a6e9c9;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;font-size:14px;padding:16px 18px}
+  /* One baseline row: title + subtitle on the left, a plain counter on the right.
+     The old layout put a 220px progress card at the far right of a space-between
+     row whose left side held only the word "Milestone" — which read as a widget
+     bolted on, with ~700px of dead space between the two. */
+  .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:2px}
+  .top h2{margin:0;font-size:17px;font-weight:800;letter-spacing:-.01em}
+  .top .desc{margin:3px 0 0;color:var(--ink-faint);font-size:12px}
+  .count{font-size:11.5px;font-weight:600;color:var(--ink-faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .count b{color:var(--done)}
+
+  /* timeline: fluid — 4 cards always share the available width, no horizontal drag */
+  .scroller{padding-bottom:4px}
+  .track{position:relative;display:flex;gap:8px;padding-top:22px}
+  /* the horizontal spine */
+  .spine{position:absolute;top:36px;left:0;right:0;height:3px;background:var(--line);border-radius:3px;z-index:0}
+  .spine>i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--done);border-radius:3px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+
+  .phase{position:relative;z-index:1;flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch}
+  /* the node dot on the spine */
+  .dot{width:30px;height:30px;border-radius:50%;background:#fff;border:3px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:var(--ink-soft);margin:0 auto 12px;cursor:pointer;transition:.18s;position:relative}
+  .dot:hover{transform:scale(1.08);border-color:var(--brand);color:var(--brand)}
+  .phase .dot{border-color:#bcd0ff}
+  .phase.done .dot{background:var(--done);border-color:var(--done);color:#fff}
+  .phase.done .dot::after{content:"✓";position:absolute;font-size:15px}
+  .phase.done .dot span{display:none}
+
+  .card{border:1px solid var(--line);border-radius:12px;background:#fff;padding:11px 12px;cursor:pointer;transition:.16s;height:100%;display:flex;flex-direction:column;gap:7px}
+  .card:hover{box-shadow:0 3px 12px rgba(0,0,0,.07);border-color:var(--ink-faint)}
+  .phase.done .card{background:var(--done-soft);border-color:var(--done-line)}
+  .ph-h{display:flex;align-items:flex-start;gap:6px;justify-content:space-between}
+  .ph-name{font-size:14px;font-weight:750;letter-spacing:-.01em;line-height:1.35}
+  .ph-idx{font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--brand);display:flex;align-items:center;gap:6px;margin-bottom:3px}
+  .chk{width:18px;height:18px;border-radius:6px;border:2px solid var(--line);flex:none;display:flex;align-items:center;justify-content:center;transition:.15s;background:#fff}
+  .phase.done .chk{background:var(--done);border-color:var(--done)}
+  .phase.done .chk::after{content:"✓";color:#fff;font-size:12px;font-weight:800}
+  .ph-task{font-size:11.5px;color:var(--ink-soft);line-height:1.5}
+  .hint{margin-top:12px;font-size:11.5px;color:var(--ink-faint);display:flex;align-items:center;gap:6px}
+
+  /* Narrow viewports: 4 cards in one row stops being readable, so wrap into a grid and
+     drop the spine + band alignment, which only make sense for a single row. */
+  @media (max-width:900px){
+    .ph-name{font-size:13px}
+    .ph-task{font-size:11px}
+  }
+  @media (max-width:780px){
+    .track{flex-wrap:wrap;padding-top:10px;gap:10px}
+    .phase{flex:1 1 calc(50% - 5px)}
+    .spine{display:none}
+    .dot{margin-bottom:8px}
+  }
+  @media (max-width:520px){
+    .phase{flex:1 1 100%}
+  }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div>
+      <h2>Milestone</h2>
+      <p class="desc">四个阶段的核心任务 · 点击卡片可标记完成</p>
+    </div>
+    <div class="count"><b id="cntdone">0</b> / 4 阶段完成</div>
+  </div>
+
+  <div class="scroller">
+    <div class="track" id="track">
+      <div class="spine"><i id="spinefill"></i></div>
+    </div>
+  </div>
+
+<script>
+// ── phase data ───────────────────────────────────────────────────────────────
+const PHASES = [
+  {name:"评测体系与数据基建",
+   task:"定义机评维度；建设质检数据基建、标注规范"},
+  {name:"搭建 Agentic Critic 质检平台",
+   task:"基于自研闭源强模型，优化迭代 Harness 及组件，建设多模态 omni 质检平台，上线视频质检提效系统"},
+  {name:"自研模型与数据飞轮",
+   task:"基于人机协同的质检提效系统持续回流人类专家的高质量数据，回流难负样本形成数据飞轮；通过强化多模态 omni 生成场景的视频感知能力优化质检系统"},
+  {name:"赋能视频生成 Reward System",
+   task:"建设 Outcome RM & Process RM，打通质检能力到视频生成后训练的闭环"},
+];
+const KEY = "abc-critic-milestone-v4";
+
+// state load (srcdoc iframes have an opaque origin — localStorage may throw)
+let done = {};
+try { done = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch(e){ done = {}; }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(done)); }catch(e){} }
+
+const track = document.getElementById('track');
+PHASES.forEach((p, i)=>{
+  const el = document.createElement('div');
+  el.className = 'phase';
+  el.dataset.i = i;
+  el.innerHTML =
+    '<div class="dot"><span>'+(i+1)+'</span></div>'+
+    '<div class="card">'+
+      '<div class="ph-h"><div><span class="ph-idx">PHASE '+(i+1)+'</span>'+
+        '<span class="ph-name">'+p.name+'</span></div><div class="chk"></div></div>'+
+      '<div class="ph-task">'+p.task+'</div>'+
+    '</div>';
+  el.querySelector('.card').onclick = ()=> toggle(i);
+  el.querySelector('.dot').onclick  = (e)=>{ e.stopPropagation(); toggle(i); };
+  track.appendChild(el);
+});
+
+function toggle(i){ done[i] = !done[i]; save(); render(); }
+
+function render(){
+  const phaseEls = [...track.querySelectorAll('.phase')];
+  let n = 0;
+  phaseEls.forEach((el,i)=>{ const d = !!done[i]; el.classList.toggle('done', d); if(d) n++; });
+  document.getElementById('cntdone').textContent = n;
+  // spine fill: reach the last consecutive-done phase's dot (visual continuity)
+  let lastDone = -1;
+  for (let i=0;i<PHASES.length;i++){ if(done[i]) lastDone = i; }
+  const fill = document.getElementById('spinefill');
+  if (lastDone < 0){ fill.style.width = '0%'; }
+  else { fill.style.width = ((lastDone + 0.5) / PHASES.length * 100) + '%'; }
+}
+
+render();
+
+// Report content height to the host page (kc-height) so the iframe hugs the chart:
+// the layout wraps into 2 rows on narrow screens, and a fixed iframe height would
+// clip it into an inner scrollbar. Measured on <body>, not documentElement — the latter
+// is stretched to the iframe's own height, so scrollHeight can never report *less* than
+// the current height and the frame would only ever grow. No-op when opened standalone.
+function reportHeight(){
+  if (window.parent === window) return;
+  const h = document.body.getBoundingClientRect().height;
+  try { window.parent.postMessage({type:'kc-height', h}, '*'); } catch(e){}
+}
+if (window.ResizeObserver) new ResizeObserver(reportHeight).observe(document.body);
+window.addEventListener('load', reportHeight);
+reportHeight();
+</script>
+</body>
+</html>
+

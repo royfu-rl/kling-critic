@@ -1,0 +1,23 @@
+/* 设计令牌 + reset：颜色、优先级调色板 P0–P4、字体栈 */
+  :root{
+    --bg:#ffffff; --bg-soft:#f6f7f9; --ink:#111418; --ink-soft:#5b636e; --ink-faint:#8b929c;
+    --line:#e4e7ec; --brand:#2f6bff; --brand-soft:#eaf0ff;
+    --subj:#8b5cf6; --subj-soft:#f3ecff; --subj-line:#e0d0ff;
+    --warn:#e0701a; --warn-soft:#fff3e6; --warn-line:#ffd9b0;
+    --dup:#d92c6a;  --dup-soft:#ffe9f1;  --dup-line:#ffc3d8;
+    --stmt:#0ea5a3; --stmt-soft:#e2f7f6; --stmt-line:#a9e6e3;
+    /* priority palette P0..P4 */
+    --p0:#e5484d; --p0-soft:#ffeaea; --p0-line:#ffc9cb;
+    --p1:#e0701a; --p1-soft:#fff1e3; --p1-line:#ffd6ac;
+    --p2:#d4a017; --p2-soft:#fdf6e3; --p2-line:#f0e0a8;
+    --p3:#2f6bff; --p3-soft:#eaf0ff; --p3-line:#cbdcff;
+    --p4:#5b636e; --p4-soft:#eef1f4; --p4-line:#d8dde3;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;font-size:14px}
+  .wrap{display:flex;flex-direction:column;height:100%}
+
+

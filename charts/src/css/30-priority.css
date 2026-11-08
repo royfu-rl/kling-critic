@@ -1,0 +1,28 @@
+/* After 模式的优先级着色：chip 底色、P 徽章、P 待补斜纹、按模式隔离筛选栏 */
+  /* priority (after mode) chip coloring */
+  .pbadge{font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:5px;letter-spacing:.03em;line-height:1.5}
+  body.after .chip[data-p="P0"]{border-color:var(--p0-line);background:var(--p0-soft)}
+  body.after .chip[data-p="P1"]{border-color:var(--p1-line);background:var(--p1-soft)}
+  body.after .chip[data-p="P2"]{border-color:var(--p2-line);background:var(--p2-soft)}
+  body.after .chip[data-p="P3"]{border-color:var(--p3-line);background:var(--p3-soft)}
+  body.after .chip[data-p="P4"]{border-color:var(--p4-line);background:var(--p4-soft)}
+  .pbadge[data-p="P0"]{background:var(--p0);color:#fff}
+  .pbadge[data-p="P1"]{background:var(--p1);color:#fff}
+  .pbadge[data-p="P2"]{background:var(--p2);color:#fff}
+  .pbadge[data-p="P3"]{background:var(--p3);color:#fff}
+  .pbadge[data-p="P4"]{background:var(--p4);color:#fff}
+  /* 优先级待产品输入：斜纹虚线底，区别于「已删除 / 已移出」的灰显 */
+  body.after .chip[data-p="TBD"]{border-style:dashed;border-color:var(--line);
+    background:repeating-linear-gradient(135deg,#fafbfc,#fafbfc 6px,#f3f5f7 6px,#f3f5f7 12px)}
+  .pbadge[data-p="TBD"]{background:#eef1f4;color:var(--ink-faint)}
+  /* in after mode, chips without a priority (not in subset) fade out */
+  body.after .chip:not([data-p]){opacity:.32;filter:grayscale(.5)}
+  /* each mode gets its own filter bar: flags for before, 优先级 for after */
+  body.after #filters{display:none}
+  body.before #pfilters{display:none}
+  .fbtn .dot-tbd{width:8px;height:8px;border-radius:50%;border:1px dashed var(--ink-faint);
+    background:repeating-linear-gradient(135deg,#fff,#fff 2px,#e6eaee 2px,#e6eaee 4px)}
+  /* priority badge only in after mode; flag badges only in before mode */
+  body.before .pbadge.prio-only{display:none}
+  body.after .badge.flag-only{display:none}
+

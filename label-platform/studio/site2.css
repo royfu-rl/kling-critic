@@ -1,0 +1,220 @@
+/* site2.css —— 在 data-viewer 那套 studio/viewer.css 之上加 site-2 专有的东西：
+   正/负标签的强弱对比、命中标签 vs 顺带标签的区分、两种形态混排时的标识。 */
+
+/* 正负样本 —— 二分类训练集的核心信息，必须一眼可辨 */
+.pill.lab-pos { background: rgba(199, 62, 62, 0.14); color: #c73e3e; font-weight: 650; }
+.pill.lab-neg { background: rgba(26, 143, 76, 0.14); color: var(--success); font-weight: 650; }
+.pill.form { background: var(--bg-fill); color: var(--text-tertiary); font-weight: 600; letter-spacing: 0.04em; }
+
+/* 命中本维度的标签 vs 同条数据上顺带标的其它标签 */
+.tag.hit {
+  background: rgba(199, 62, 62, 0.12);
+  border-color: rgba(199, 62, 62, 0.4);
+  color: #b03535;
+  font-weight: 650;
+}
+.tag.other { opacity: 0.72; }
+
+.tagnote {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  word-break: break-all;
+}
+
+/* 列表项：正负色条压在最左边，扫列表时不用读文字 */
+.case-item { position: relative; }
+.case-item.pos::before,
+.case-item.neg::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+}
+.case-item.pos::before { background: #c73e3e; }
+.case-item.neg::before { background: var(--success); }
+
+.case-sub {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 帧条上区分"命中本维度"的帧和"只标了别的问题"的帧 */
+.frame-thumb.hit .frame-canvas { outline: 2px solid rgba(199, 62, 62, 0.55); outline-offset: -2px; }
+.frame-cap .hitdot { color: #c73e3e; font-weight: 700; }
+
+.gbox.other { border-color: var(--text-tertiary); }
+.gbox.other > span { background: var(--text-tertiary); }
+
+/* 负样本 / 无框正样本的概览帧条 —— 纯浏览，不需要框 */
+.strip-plain { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.strip-plain img {
+  height: 96px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: zoom-in;
+}
+
+/* 无 grounding 的视频级标签块 */
+.vlevel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-fill);
+}
+.vlevel-hint { font-size: 11.5px; color: var(--text-tertiary); margin: 0; }
+
+/* 命中侧高亮：pairwise 里"哪一侧是正样本"比"谁 GSB 胜"更重要 */
+.pair-col.target { border-color: #c73e3e; box-shadow: 0 0 0 3px rgba(199, 62, 62, 0.14); }
+.pair-col.target .pair-name::after {
+  content: "本条采样的就是这一侧";
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #c73e3e;
+  letter-spacing: 0;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px 14px;
+  font-size: 11.5px;
+}
+.meta-grid > div { display: flex; gap: 6px; min-width: 0; }
+.meta-grid b { color: var(--text-secondary); font-weight: 600; flex: none; }
+.meta-grid span { color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ------------------------------------------------------------------ pass@k tab
+   一条 case 被同一个模型采样 k 次, 看的是"k 次里判对几次"。这批分布是双峰的
+   (全错 / 全对 各占三成), 所以列表打头先给直方图 —— 平均值在这种分布上没意义。 */
+
+.dist {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px 6px;
+  background: var(--bg-fill);
+  margin-bottom: 8px;
+}
+.dist-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dist-title { font-size: 11.5px; font-weight: 650; color: var(--text-secondary); }
+.dist-hint { font-size: 10.5px; color: var(--text-tertiary); }
+
+.dist-bars { display: flex; gap: 3px; align-items: flex-end; margin-top: 6px; }
+.dist-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 1px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.dist-col:hover { background: var(--bg-fill-hover); }
+.dist-col.on { border-color: var(--border-strong); background: var(--bg-fill-hover); }
+
+/* 柱子固定 56px 高的槽, 柱高按占比 —— 不给固定槽的话 flex 会把柱子拉平 */
+.dist-slot { position: relative; width: 100%; height: 56px; display: flex; align-items: flex-end; }
+.dist-bar {
+  position: relative;
+  width: 100%;
+  min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--warn);
+}
+.dist-bar.zero { background: #c73e3e; }        /* 0/k = 一次都没判对 */
+.dist-bar.full { background: var(--success); } /* k/k = 稳定判对 */
+/* 全量分布画成柱子后面的影子, 用来核对抽样有没有偏 */
+.dist-ghost {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background: var(--text-tertiary);
+  opacity: 0.18;
+}
+.dist-n { font-size: 10px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.dist-x { font-size: 10px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* 列表项色条。★ 这里绿=判对 红=判错, 和 .case-item.pos/.neg (正例=红) 的语义相反,
+   所以另起一套类名, 不复用 —— 复用的话全对的 case 会显示成红色。 */
+.case-item.pk-ok::before,
+.case-item.pk-mid::before,
+.case-item.pk-bad::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 3px;
+  border-radius: 2px;
+}
+.case-item.pk-ok::before { background: var(--success); }
+.case-item.pk-mid::before { background: var(--warn); }
+.case-item.pk-bad::before { background: #c73e3e; }
+
+.pill.pk-ok { background: rgba(26, 143, 76, 0.14); color: var(--success); font-weight: 650; }
+.pill.pk-mid { background: rgba(184, 115, 12, 0.16); color: var(--warn); font-weight: 650; }
+.pill.pk-bad { background: rgba(199, 62, 62, 0.14); color: #c73e3e; font-weight: 650; }
+
+.pk-meter {
+  grid-column: 2;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  margin-top: 3px;
+}
+.pk-fill { display: block; height: 100%; background: var(--warn); }
+.pk-fill.pk-ok { background: var(--success); }
+.pk-fill.pk-bad { background: #c73e3e; }
+
+/* 每次采样一张卡: 左侧色条给"这次判对没有", think 全文默认展开但限高可滚 */
+.pk-card {
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-elevated, var(--bg-fill));
+}
+.pk-card.ok { border-left-color: var(--success); }
+.pk-card.bad { border-left-color: #c73e3e; }
+.pk-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pk-idx { font-size: 12px; font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.pk-len { margin-left: auto; font-size: 10.5px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.pk-think {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 11.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-fill);
+  border-radius: 6px;
+  color: var(--text-secondary);
+}
+.pk-final {
+  margin-top: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  background: var(--bg-fill);
+  color: var(--text);
+  word-break: break-all;
+}
+.pk-prompt { margin-top: 10px; font-size: 11.5px; color: var(--text-tertiary); }
+.pk-prompt summary { cursor: pointer; padding: 4px 0; }
+

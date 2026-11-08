@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kling-Critic 帧级标注 Demo</title>
+<style>
+/* 设计令牌 + reset：颜色、优先级调色板 P0–P4、字体栈 */
+  :root{
+    --bg:#ffffff; --bg-soft:#f6f7f9; --ink:#111418; --ink-soft:#5b636e; --ink-faint:#8b929c;
+    --line:#e4e7ec; --brand:#2f6bff; --brand-soft:#eaf0ff;
+    --subj:#8b5cf6; --subj-soft:#f3ecff; --subj-line:#e0d0ff;
+    --warn:#e0701a; --warn-soft:#fff3e6; --warn-line:#ffd9b0;
+    --dup:#d92c6a;  --dup-soft:#ffe9f1;  --dup-line:#ffc3d8;
+    --stmt:#0ea5a3; --stmt-soft:#e2f7f6; --stmt-line:#a9e6e3;
+    /* priority palette P0..P4 */
+    --p0:#e5484d; --p0-soft:#ffeaea; --p0-line:#ffc9cb;
+    --p1:#e0701a; --p1-soft:#fff1e3; --p1-line:#ffd6ac;
+    --p2:#d4a017; --p2-soft:#fdf6e3; --p2-line:#f0e0a8;
+    --p3:#2f6bff; --p3-soft:#eaf0ff; --p3-line:#cbdcff;
+    --p4:#5b636e; --p4-soft:#eef1f4; --p4-line:#d8dde3;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;font-size:14px}
+  .wrap{display:flex;flex-direction:column;height:100%}
+
+/* 播放器主体样式：demo 选择条、视频列、grounding 框叠加层、时间轴、
+   时间戳跳转芯片、深色 JSON 卡。modal 宿主与内联宿主共用这一份。
+   组件源自 skills/chart-blocks/templates/frame-annotation-modal。
+   仅依赖宿主的 --mono 令牌，其余颜色自带。 */
+  .demostrip{display:flex;gap:7px;padding:11px 20px 0;flex-wrap:wrap;flex:none;background:#fff}
+  .demopill{appearance:none;border:1px solid #d0d0d0;background:#f2f2f4;color:#555;
+            font-family:inherit;font-size:11.5px;font-weight:650;padding:5px 12px;border-radius:999px;cursor:pointer;transition:.12s}
+  .demopill:hover{border-color:#aaa;color:#1c1c1e}
+  .demopill.on{background:#2f6bff;border-color:#2f6bff;color:#fff}
+  /* two-column body: video left, json right — minmax(0,..) lets both columns shrink
+     so neither can push its content past the modal frame */
+  .mbody{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:0;min-height:0;overflow:auto}
+  .vcol{padding:18px 20px;border-right:1px solid #e0e0e0;min-width:0;background:#fff;display:flex;flex-direction:column;min-height:0}
+  .jcol{padding:16px;min-width:0;background:#f5f5f7;overflow:auto;display:flex}
+  .vcap{font-size:12px;color:#6b6b6b;margin:0 0 10px}
+  .vcap b{color:#1c1c1e;font-weight:700}
+  /* stable 16:9 box: swapping demo src can no longer collapse/resize the frame (kills flicker) */
+  .video-wrapper{position:relative;border-radius:11px;overflow:hidden;background:#000;line-height:0;aspect-ratio:16/9;max-height:56vh;flex:none}
+  .video-wrapper video{width:100%;height:100%;display:block;object-fit:contain;cursor:pointer;opacity:1;transition:opacity .18s ease}
+
+  /* ── frame-level grounding boxes, laid over the video ──
+     The layer is sized/positioned by fitAnnotationLayer() to the video's OWN
+     letterboxed content rect, not the wrapper — otherwise every box drifts by
+     the size of the black bars. */
+  .annotation-layer{position:absolute;z-index:2;pointer-events:none;overflow:visible;opacity:1;transition:opacity .18s ease}
+  .annotation-box{position:absolute;border:2px solid #ff3b30;border-radius:3px;
+                  box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 12px rgba(255,59,48,.38);
+                  animation:annotationPulse 1.15s ease-in-out infinite alternate}
+  .annotation-box[data-sev="2"]{border-color:#e0701a;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 12px rgba(224,112,26,.38);animation:none}
+  .annotation-box[data-sev="1"]{border-color:#d4a017;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 12px rgba(212,160,23,.38);animation:none}
+  .annotation-box span{position:absolute;left:-2px;top:-23px;max-width:260px;overflow:hidden;text-overflow:ellipsis;
+                       white-space:nowrap;padding:3px 6px;border-radius:3px 3px 3px 0;background:rgba(155,18,15,.92);
+                       color:#ffcbc7;font-size:11px;line-height:1.25;font-weight:700;letter-spacing:.2px;
+                       text-shadow:0 1px 1px #000;box-shadow:0 1px 5px rgba(0,0,0,.5)}
+  .annotation-box[data-sev="2"] span{background:rgba(150,72,10,.92);color:#ffe0c4}
+  .annotation-box[data-sev="1"] span{background:rgba(133,99,8,.92);color:#ffeec0}
+  /* box hugging the top edge — flip the label inside so it isn't clipped away */
+  .annotation-box.near-top span{top:2px;left:2px;border-radius:3px}
+  @keyframes annotationPulse{
+    from{border-color:#ff3b30}
+    to{border-color:#ff7b72;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 18px rgba(255,59,48,.62)}
+  }
+
+  .vcontrols{position:absolute;left:0;right:0;bottom:0;z-index:3;padding:12px 14px 10px;
+             background:linear-gradient(transparent,rgba(0,0,0,.72));display:flex;flex-direction:column;gap:9px;
+             opacity:0;transition:opacity .2s}
+  .video-wrapper:hover .vcontrols,.vcontrols.show{opacity:1}
+  /* timeline / progress with problem-frame markers */
+  .track{position:relative;height:22px;display:flex;align-items:center;cursor:pointer}
+  .rail{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.25)}
+  .rfill{position:absolute;left:0;height:5px;border-radius:3px;background:#3b82f6;width:0;pointer-events:none}
+  .mark{position:absolute;top:50%;width:13px;height:13px;border-radius:50%;transform:translate(-50%,-50%);
+        border:2px solid #fff;cursor:pointer;transition:.12s;z-index:2}
+  .mark:hover{transform:translate(-50%,-50%) scale(1.25)}
+  .mark.act{box-shadow:0 0 0 3px rgba(255,255,255,.5)}
+  .mark[data-sev="3"]{background:#e5484d}
+  .mark[data-sev="2"]{background:#e0701a}
+  .mark[data-sev="1"]{background:#d4a017}
+  .crow{display:flex;align-items:center;gap:11px}
+  .cbtn{background:none;border:0;padding:0;cursor:pointer;color:#fff;font-size:16px;line-height:1;flex:none;transition:opacity .2s}
+  .cbtn:hover{opacity:.8}
+  .ctime{font-size:11.5px;color:#e8e8ea;font-variant-numeric:tabular-nums;flex:none;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+  .cspacer{flex:1}
+  .jumpwrap{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+  .jump{appearance:none;border:1px solid #d0d0d0;background:#f2f2f4;color:#555;
+        font-family:var(--mono);font-size:11px;font-weight:600;padding:4px 9px;border-radius:7px;cursor:pointer;transition:.12s;
+        display:inline-flex;align-items:center;gap:6px}
+  .jump:hover{border-color:#aaa;color:#1c1c1e}
+  .jump.act{border-color:#3b82f6;color:#2f6bff;background:rgba(59,130,246,.1)}
+  .jump .jd{width:7px;height:7px;border-radius:50%}
+  .jump .jd[data-sev="3"]{background:#e5484d}.jump .jd[data-sev="2"]{background:#e0701a}.jump .jd[data-sev="1"]{background:#d4a017}
+  /* json panel — dark editor card */
+  .jcard{display:flex;flex-direction:column;width:100%;min-width:0;background:#1a1d24;border-radius:10px;
+         overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.18);align-self:flex-start;max-height:100%}
+  .jhead{display:flex;align-items:center;gap:8px;margin:0;padding:10px 14px;background:#0f1117;
+         border-bottom:1px solid rgba(255,255,255,.08);flex:none}
+  .jhead .jt{font-size:12.5px;font-weight:600;color:#9CA3AF;font-family:var(--mono)}
+  .jhead .jc{margin-left:auto;font-size:15px;color:#9CA3AF;cursor:pointer;transition:.2s}
+  .jhead .jc:hover{color:#F8FAFC}
+  .jhead .jc.copied{color:#10B981}
+  .jbodywrap{padding:14px 16px;overflow:auto;min-height:0}
+  /* pre-wrap, not pre: `reasoning` is a full sentence and would otherwise run off
+     the card into a horizontal scrollbar nobody finds */
+  pre.json{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#E5E7EB;white-space:pre-wrap;word-break:break-word}
+  .json .jk{color:#60A5FA}.json .js{color:#34D399}.json .jn{color:#F59E0B}.json .jp{color:#6B7280}
+  .jempty{color:#6B7280;font-size:12px;font-family:var(--mono);white-space:normal}
+  @media(max-width:760px){.mbody{grid-template-columns:1fr}.vcol{border-right:0;border-bottom:1px solid #e0e0e0}}
+
+/* 标注 modal 的壳：遮罩、窗口、macOS 标题栏与红黄绿灯。
+   播放器主体样式在 45-player.css（与内联宿主共用），这里只管「弹窗」这层。
+   body.kc-expanded 那几条是被父页 srcdoc 内联时的全屏协商，见 00-iframe.js。
+   黄/绿灯是纯装饰，没有 handler —— 只有红灯接了 closeModal。 */
+  .overlay{position:fixed;inset:0;background:rgba(12,15,20,.55);backdrop-filter:blur(3px);
+           display:none;align-items:center;justify-content:center;z-index:50;padding:24px}
+  .overlay.on{display:flex}
+  /* when a parent page has blown this iframe up to fullscreen, the host card is
+     hidden and the overlay goes transparent — the parent dims+blurs the REAL page
+     behind us, so the modal floats over the (blurred) page, not over our own card. */
+  body.kc-expanded .wrap{visibility:hidden}
+  /* background:transparent only takes effect once the modal is actually open (same
+     frame as .overlay.on). Going transparent on button-click would land BEFORE the
+     parent's scrim and flash the white page through. */
+  body.kc-expanded.kc-modal-open{background:transparent}
+  body.kc-expanded.kc-modal-open .overlay{background:transparent;backdrop-filter:none;padding:0}
+  .modal{width:min(1240px,100%);max-height:92vh;background:#ffffff;color:#1c1c1e;border-radius:12px;
+         overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+  .mhead{display:flex;align-items:center;gap:10px;padding:13px 20px;background:#ebebeb;
+         border-bottom:1px solid #d0d0d0;flex:none;min-height:44px}
+  .mhead .mt{font-size:15px;font-weight:700;color:#1c1c1e}
+  .mhead .mp{font-family:var(--mono);font-size:11px;color:#8e8e93}
+  .mhead .mbadge{font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:6px;letter-spacing:.03em;color:#fff}
+  /* macOS traffic-light close/min/max buttons */
+  .traflights{display:flex;align-items:center;gap:8px;margin-right:10px;flex:none}
+  .tfl{appearance:none;border:0;padding:0;width:13px;height:13px;border-radius:50%;cursor:pointer;transition:.1s;flex:none}
+  .tfl-r{background:#ff5f57}.tfl-r:hover{background:#e0443e}
+  .tfl-y{background:#febc2e}.tfl-y:hover{background:#e0a325}
+  .tfl-g{background:#28c840}.tfl-g:hover{background:#1eab32}
+  /* demo selector strip */
+
+/* 内联播放器宿主：把「标签体系里点 ▷ Play 弹出的那个 modal」原样摊平成页面里的
+   一张静态卡片（Pointwise 数据示例用）。
+
+   关键点：DOM 与样式都不另起一套 —— 内联版直接复用 html/50-modal.html 的 modal
+   本体和 45-player.css / 50-modal.css 的全部样式，这里只做三件事：
+     ① 解除 .overlay 的 fixed 定位，让它退化成普通文档流容器；
+     ② 去掉弹窗特征（大投影、92vh 限高、圆角裁切保留）；
+     ③ 隐藏只在弹窗里有意义的红黄绿灯（这里没有「关闭」这回事）。
+   旧版这里是一套深色 .card/.head 外壳 + 逐条覆盖播放器颜色，等于把同一个组件
+   维护了两遍（浅色一份、深色一份），两边样式已经开始漂移 —— 那正是要消掉的重复。 */
+.inline-player{background:#f0f2f5;padding:18px}
+/* overlay 退化：不再 fixed 铺满、不再变暗模糊，就是个居中的块 */
+.inline-player .overlay{position:static;inset:auto;display:block;background:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none;padding:0;z-index:auto}
+.inline-player .modal{margin:0 auto;max-height:none;
+  box-shadow:0 1px 3px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.08)}
+/* 红黄绿灯是弹窗语义（关闭/最小化/最大化），静态卡片里没有对应动作 */
+.inline-player .traflights{display:none}
+/* 摊平后卡片高度由内容决定，副标题（原 modal 的面包屑）推到行尾更像页面标题栏 */
+.inline-player .mhead .mp{margin-left:auto}
+/* JSON 列：弹窗里是 92vh 高的固定框，摊平后没有那个高度约束，
+   jcard 用 align-self:flex-start 就只包住文字，右侧留一大片空白。
+   这里让它撑满整列，与左侧视频列齐高。 */
+.inline-player .jcard{align-self:stretch}
+.inline-player .jhint{max-width:1240px;margin:12px auto 0;font-size:11.5px;color:#6b7787;line-height:1.6}
+</style>
+</head>
+<body class="inline-player">
+<!-- 这里内联的就是 html/50-modal.html 那一份 modal 本体（含播放器），不另写一套：
+     「Pointwise 数据实际呈现」与标签体系里点 ▷ Play 弹出的，必须是同一个组件。
+     区别只在 60-inline.css 把它从悬浮弹窗摊平成页面里的静态卡片。 -->
+<!-- 标注 modal：视频 + 帧级 grounding 框 + 帧级 JSON
+     组件来自 skills/chart-blocks/templates/frame-annotation-modal，
+     相比旧版新增：画面上的 grounding 框叠加层（#v-layer）与 #v-wrap 定位锚点。
+     黄/绿灯为装饰，无 handler（macOS 观感），只有红灯关闭。 -->
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="mhead">
+      <div class="traflights">
+        <button class="tfl tfl-r" id="m-close" aria-label="关闭" title="关闭"></button>
+        <button class="tfl tfl-y" aria-label="最小化" title="最小化"></button>
+        <button class="tfl tfl-g" aria-label="最大化" title="最大化"></button>
+      </div>
+      <span class="mt" id="m-title">标注数据</span>
+      <span class="mbadge" id="m-badge" style="display:none"></span>
+      <span class="mp" id="m-path"></span>
+    </div>
+    <div class="demostrip" id="m-strip"></div>
+    <!-- 播放器主体：视频列（含 grounding 框叠加层）+ 帧级 JSON 列。
+     modal 壳与内联卡片壳共用这一段，DOM id 是两者的契约。 -->
+<div class="mbody">
+  <div class="vcol">
+    <p class="vcap" id="v-cap"></p>
+    <div class="video-wrapper" id="v-wrap">
+      <video id="v-el" playsinline preload="metadata"></video>
+      <div class="annotation-layer" id="v-layer" aria-hidden="true"></div>
+      <div class="vcontrols" id="v-controls">
+        <div class="track" id="v-track">
+          <div class="rail"></div>
+          <div class="rfill" id="v-fill"></div>
+        </div>
+        <div class="crow">
+          <button class="cbtn" id="v-play" aria-label="播放/暂停">▶</button>
+          <span class="ctime" id="v-time">0:00 / 0:00</span>
+          <span class="cspacer"></span>
+          <button class="cbtn" id="v-mute" aria-label="静音">🔊</button>
+        </div>
+      </div>
+    </div>
+    <div class="jumpwrap" id="v-jumps"></div>
+  </div>
+  <div class="jcol">
+    <div class="jcard">
+      <div class="jhead">
+        <span class="jt">frame-annotation.json</span>
+        <span class="jc" id="j-copy" title="复制">⧉</span>
+      </div>
+      <div class="jbodywrap">
+        <pre class="json" id="j-body"><span class="jempty">点击进度条上的问题帧标记查看该帧标注。</span></pre>
+      </div>
+    </div>
+  </div></div>
+  </div>
+</div>
+<p class="jhint">每条 5–15s 视频标注它存在的所有质检问题。核心字段：dimension（命中三级标签）、time（问题帧时刻）、grounding（画面坐标）、severity（严重度）、reasoning（判定理由，强制字段）。</p>
+<script>
+// ── 数据块：由 tools/gen-chart.mjs 从 data/tag-system.json 生成，勿手改 ──
+//   要改标签、优先级、rubric、边界规则 → 改 data/tag-system.json 后重跑生成器。
+//   故意压成单行：美化缩进会让本文件膨胀到 4000+ 行，可读的是 JSON 源文件。
+const ISSUES = {"collapse":{"kind":"confusion","label":"混淆","title":"崩坏 ↔ 合理性·结构异常 / 主体间交互","desc":"「明显 / 轻微崩坏」与「合理性」下的结构异常（生物 / 非生物）、主体间交互，都在描述“画面内容坏掉”。标注员难以稳定区分：整体不可辨识算崩坏，还是主体可辨识但局部结构 / 交互错误。","members":["明显崩坏","轻微崩坏","生物类结构异常","非生物结构异常","主体间交互"],"fix":"约定判定优先级：主体已不可辨识 → <b>崩坏</b>；主体可辨识但结构 / 交互错误 → <b>合理性·结构异常 / 主体间交互</b>。两者互斥、不可并存，并补充各档锚点示例视频。"},"temporal":{"kind":"dup","label":"重复","title":"动态时序一致性 / 光影风格时序一致性 ↔ 一致性·(时序 / 风格)","desc":"动态质量下的「动态时序一致性」「光影风格时序一致性」与一致性维度下的时序连贯 / 风格一致性语义重叠，同一现象可能被同时打到两个维度。","members":["动态时序一致性","光影风格时序一致性","风格一致性","叙事连贯性","镜头连贯性"],"fix":"按作用范围收敛到单一归属：<b>跨镜头 / 长程</b>一致性归「一致性」维度；<b>单镜头内逐帧</b>抖动 / 风格漂移归「动态质量」。避免同一 trial 双记。"},"audio":{"kind":"dup","label":"重复","title":"动态美学·音频项 ↔ 音频评测维度","desc":"「动态美学及视听叙事」下的 音频基础质量差 / 音画不同步 / 音画不匹配，与独立的「音频评测维度」（音质、音画同步·音画不匹配）重复。","members":["音频基础质量差","音画不同步","音画不匹配","失真感知","口型匹配度"],"fix":"音频客观判定统一收到「<b>音频评测维度</b>」；「动态美学」仅保留与叙事 / 情绪耦合的纯主观视听项，删除与音频维度重复的客观项。"}};
+const STMT = new Set(["音频一致性","音乐音效一致连贯性","人声一致连贯性","动作或表演连贯性","方位连贯性","空间位置连贯性","镜头连贯性","叙事连贯性","场景一致性","主体一致性","颜色一致性","风格一致性","动态时序一致性","光影风格时序一致性","运动真实性","表演真实性","口型匹配度"]);
+const ING = new Set(["主体不一致","动作或表演不连贯","动作缺失","动作细节不足","表情不符","动作时序遗漏","动作时序顺序错误","动作速度不符","动作未响应","运镜类型错误","运镜速度不符","运镜时序遗漏","运镜时序顺序错误","景别与拍摄视角错误","运镜未响应","主体未响应","环境未响应","崩坏","不符合物理规律","生物结构异常","不符合现实常识","油腻感","曝光光影或色彩异常","画面文字不可读"]);
+const DEMOS = {"主体一致性":[{"label":"demo-01 · 换脸","badge":"负例","src":"assets/videos/sintel10.mp4","caption":"素材：<b>同一角色多镜头</b>。切镜后主体身份漂移。","frames":[{"time":5.5,"dimension":"主体一致性","target":"主角人物","grounding":"bbox: [260,120,560,460]","severity":3,"reasoning":"切镜后角色发色、脸型与首镜头明显不一致，跨镜头主体身份未保持，判定主体一致性问题。","box":{"x":20.31,"y":16.67,"w":23.44,"h":47.22}}]}],"曝光光影或色彩异常":[{"label":"demo-01 · 过曝","badge":"负例","src":"assets/videos/jelly10.mp4","caption":"素材：<b>水下光照场景</b>。高光区域整体过曝。","frames":[{"time":1.1,"dimension":"曝光光影或色彩异常","target":"水母及周边水体","grounding":"bbox: [300,150,700,480]","severity":2,"reasoning":"高光区域溢出成纯白块，丢失纹理细节，且冷暖色温在同帧内冲突，属曝光/色彩异常。","box":{"x":23.44,"y":20.83,"w":31.25,"h":45.83}}]}],"波动扭曲":[{"label":"demo-01 · 水面扭曲","badge":"负例","src":"assets/videos/jelly10.mp4","caption":"素材：<b>水下漂浮场景</b>。主体表面出现非物理波动。","frames":[{"time":3.3,"dimension":"波动扭曲","target":"水母伞体表面","grounding":"bbox: [180,220,620,430]","severity":2,"reasoning":"伞体表面在平移中出现周期性扭曲，超出正常水体折射可解释范围，判定波动扭曲。","box":{"x":14.06,"y":30.56,"w":34.38,"h":29.17}}]}],"音画不同步":[{"label":"demo-01 · 口型延迟","badge":"负例","src":"assets/videos/sintel10.mp4","caption":"素材：<b>人物说话镜头</b>。口型与语音存在延迟。","frames":[{"time":6,"dimension":"音画不同步","target":"说话人口部","grounding":"bbox: [380,300,520,420]","severity":2,"reasoning":"语音已发出音节，口型闭合滞后约 0.3s，音画时间轴未对齐，判定音画不同步。","box":{"x":29.69,"y":41.67,"w":10.94,"h":16.67}}]}],"文字不可读":[{"label":"","badge":"负例 · 公开集视频 + 机检框","src":"assets/videos/vf_6004655.mp4","caption":"素材：<b>The revolution begins, the peasants rise up against the government, th</b>　公开集人工评分 visual quality 1/4 · temporal 1/4 · factual 1/4","frames":[{"evidence_id":"1","frame":2,"time":0.4,"bbox":[269,0,591,634],"box":{"x":0,"y":26.88,"w":63.44,"h":32.19},"frame_range":[2,6],"dimension":"文字不可读","observation":"画面文字为无意义字形（RKEGILVE / RJUTIK）（EAST 检出，conf 1.0）"},{"evidence_id":"2","frame":4,"time":1,"bbox":[262,0,588,653],"box":{"x":0,"y":26.25,"w":65.31,"h":32.5},"frame_range":[2,6],"dimension":"文字不可读","observation":"画面文字为无意义字形（RKEGILVE / RJUTIK）（EAST 检出，conf 1.0）"},{"evidence_id":"3","frame":6,"time":1.6,"bbox":[256,3,619,653],"box":{"x":0.31,"y":25.63,"w":65,"h":36.25},"frame_range":[2,6],"dimension":"文字不可读","observation":"画面文字为无意义字形（RKEGILVE / RJUTIK）（EAST 检出，conf 1.0）"}]}],"崩坏":[{"label":"","badge":"负例 · 公开集视频 + 机检框","src":"assets/videos/vf_1003674.mp4","caption":"素材：<b>Joe Biden, red lazer eyes, surging with power</b>　公开集人工评分 visual quality 1/4 · temporal 1/4 · factual 1/4","frames":[{"evidence_id":"1","frame":2,"time":0.4,"bbox":[96,32,489,338],"box":{"x":3.21,"y":9.57,"w":30.62,"h":39.35},"frame_range":[2,6],"dimension":"崩坏","observation":"人脸区域结构溶解为色块（OWL-ViT 检出，conf 0.518）"},{"evidence_id":"2","frame":4,"time":1,"bbox":[72,0,488,318],"box":{"x":0,"y":7.19,"w":31.77,"h":41.63},"frame_range":[2,6],"dimension":"崩坏","observation":"人脸区域结构溶解为色块（OWL-ViT 检出，conf 0.536）"},{"evidence_id":"3","frame":6,"time":1.6,"bbox":[175,42,606,379],"box":{"x":4.22,"y":17.52,"w":33.65,"h":43.06},"frame_range":[2,6],"dimension":"崩坏","observation":"人脸区域结构溶解为色块（OWL-ViT 检出，conf 0.689）"}]}],"生物类结构异常":[{"label":"","badge":"负例 · 公开集视频 + 机检框","src":"assets/videos/vf_3005976.mp4","caption":"素材：<b>cinematic,very detailed,people dancing in the background</b>　公开集人工评分 visual quality 1/4 · temporal 1/4 · factual 1/4","frames":[{"evidence_id":"1","frame":2,"time":0.4,"bbox":[142,834,969,1000],"box":{"x":83.45,"y":14.17,"w":16.55,"h":82.7},"frame_range":[2,6],"dimension":"生物类结构异常","observation":"人体在运动中互相粘连、肢体结构错乱（OWL-ViT 检出，conf 0.151）"},{"evidence_id":"2","frame":4,"time":1,"bbox":[261,537,1000,879],"box":{"x":53.73,"y":26.1,"w":34.21,"h":73.9},"frame_range":[2,6],"dimension":"生物类结构异常","observation":"人体在运动中互相粘连、肢体结构错乱（OWL-ViT 检出，conf 0.167）"},{"evidence_id":"3","frame":6,"time":1.6,"bbox":[169,637,1000,997],"box":{"x":63.73,"y":16.89,"w":36,"h":83.11},"frame_range":[2,6],"dimension":"生物类结构异常","observation":"人体在运动中互相粘连、肢体结构错乱（OWL-ViT 检出，conf 0.162）"}]}],"主体未响应":[{"label":"","badge":"负例 · 公开集视频 + 机检框","src":"assets/videos/vf_1003702.mp4","caption":"素材：<b>a lone astronaut crossing the desert at sunset. wide angle overhead sh</b>　公开集人工评分 visual quality 1/4 · temporal 1/4 · factual 1/4","frames":[{"evidence_id":"1","frame":2,"time":0.4,"bbox":[0,477,804,825],"box":{"x":47.65,"y":0,"w":34.81,"h":80.42},"frame_range":[2,6],"dimension":"主体未响应","observation":"prompt 要求沙漠中的单个宇航员，画面为树林中的一群人物（OWL-ViT 检出，conf 0.346）"},{"evidence_id":"2","frame":4,"time":1,"bbox":[0,475,842,883],"box":{"x":47.54,"y":0,"w":40.73,"h":84.22},"frame_range":[2,6],"dimension":"主体未响应","observation":"prompt 要求沙漠中的单个宇航员，画面为树林中的一群人物（OWL-ViT 检出，conf 0.397）"},{"evidence_id":"3","frame":6,"time":1.6,"bbox":[0,461,788,846],"box":{"x":46.15,"y":0,"w":38.47,"h":78.8},"frame_range":[2,6],"dimension":"主体未响应","observation":"prompt 要求沙漠中的单个宇航员，画面为树林中的一群人物（OWL-ViT 检出，conf 0.364）"}]}]};
+const TAX = [{"name":"动态质量","subs":[{"name":"动态基础质量","tags":[{"n":"合理性","flag":"confusion","g":"collapse","facets":["生物类结构异常","非生物结构异常","主体间交互","不符合物理规律","不符合现实常识"],"prio":"P0"},{"n":"明显崩坏","flag":"confusion","g":"collapse","prio":"P0"},{"n":"轻微崩坏","flag":"confusion","g":"collapse","prio":"P1"},{"n":"速度异常","prio":"P1"},"转场异变",{"n":"明显细节纹理抖动","prio":"P1"},{"n":"轻微细节纹理抖动","prio":"P2"},{"n":"明显帧间颜色染色或伪影","prio":"P0"},{"n":"波动扭曲","prio":"P1"},{"n":"明暗闪烁","prio":"P0"},{"n":"卡顿掉帧感","prio":"P0"},{"n":"动态时序一致性","flag":"dup","g":"temporal","prio":"P0"},{"n":"光影风格时序一致性","flag":"dup","g":"temporal","prio":"P1"},{"n":"镜头晃动","prio":"P1"},{"n":"异常静止","prio":"P0"},{"n":"文字未保持","prio":"P1"},{"n":"其他动态质量问题","prio":"P2"}]},{"name":"动态美学及视听叙事","subj":true,"tags":[{"n":"运动真实性","prio":"P1"},{"n":"表演真实性","prio":"P1"},{"n":"叙事节奏较差","prio":"P1"},{"n":"叙事混乱与不完整","prio":"P0"},{"n":"景别视角维度","prio":"P1"},{"n":"运镜节奏较差","prio":"P1"},{"n":"剪辑节奏较差","prio":"P1"},{"n":"创意性","prio":"P2"},{"n":"音频基础质量差","flag":"dup","g":"audio","prio":"P1"},{"n":"音画不同步","flag":"dup","g":"audio","prio":"P0"},{"n":"音画不匹配","flag":"dup","g":"audio","prio":"P0"},{"n":"风格适配性","prio":"P2"},{"n":"情绪准确性","prio":"P2"},{"n":"节奏配合度","prio":"P2"},{"n":"声音丰富与融合自然度","prio":"P2"},{"n":"声音切换自然流畅","prio":"P2"}]},{"name":"动态幅度（仅双模型对比）","tags":[{"n":"动态幅度更大","note":"仅双模型对比场景"}]}]},{"name":"画面质量","subs":[{"name":"基础画质","tags":[{"n":"清晰度低","prio":"P0"},{"n":"类似编解码画质现象","prio":"P1"}]},{"name":"画面基础内容","tags":[{"n":"曝光光影或色彩异常","prio":"P0"},{"n":"油腻感","prio":"P0"},{"n":"异常构图","prio":"P1"},{"n":"画面杂质","prio":"P1"},{"n":"主体边缘异常","prio":"P1"},{"n":"景深与焦点问题","prio":"P1"},{"n":"纹理虚假","prio":"P2"},{"n":"文字不可读","prio":"P0"}]},{"name":"画面美学","subj":true,"tags":[{"n":"材质质感较差","prio":"P2"},{"n":"空间层次与构图布局欠佳","prio":"P2"},{"n":"色彩搭配与光影表现欠佳","prio":"P2"},{"n":"环境布景欠佳","prio":"P2"},"主体美感不足(服化)"]}]},{"name":"指令遵循","subs":[{"name":"基础内容指令遵循","tags":[{"n":"动作文本响应","facets":["动作","动作细节","表情","时序遗漏","时序顺序错误","速度"],"prio":"P0"},{"n":"运镜文本响应","facets":["类型","速度","时序遗漏","时序顺序错误","景别与拍摄视角"],"prio":"P0"},{"n":"动作与运镜时序","prio":"P1"},{"n":"播放速度响应","prio":"P2"},{"n":"响应混淆与指代错误","prio":"P0"},{"n":"主体文本响应","prio":"P0"},{"n":"文字生成响应","prio":"P0"},{"n":"否定词响应","prio":"P0"},{"n":"环境文本响应","prio":"P1"},{"n":"风格错误","prio":"P0"},{"n":"空间关系与方向错误","prio":"P1"},{"n":"复杂文字理解","prio":"P1"}]},{"name":"多镜头指令遵循","tags":["shot数量遗漏",{"n":"shot数量新增","prio":"P1"},"无切镜",{"n":"切镜时间点错误","prio":"P2"},{"n":"镜头时序问题","prio":"P0"},{"n":"转场方式错误","prio":"P1"},{"n":"镜头间内容混淆","prio":"P0"},"尾镜叙事缺失",{"n":"镜头混乱","prio":"P0"}]},{"name":"音频指令遵循","tags":["通用指令","语音指令","音效指令","音乐指令"]}]},{"name":"一致性","subs":[{"name":"输入图一致性（I2VA）","tags":[{"n":"首帧画风明显偏离","prio":"P0"},{"n":"首帧画风轻微偏离","prio":"P1"},{"n":"首帧明显色偏","prio":"P1"},{"n":"首帧轻微色偏","prio":"P2"},{"n":"首帧ID明显偏离","prio":"P0"}]},{"name":"多镜头间一致连贯性","tags":[{"n":"动作或表演连贯性","prio":"P1"},{"n":"方位连贯性","prio":"P1"},{"n":"空间位置连贯性","prio":"P1"},{"n":"镜头连贯性","flag":"dup","g":"temporal","prio":"P1"},{"n":"叙事连贯性","flag":"dup","g":"temporal","prio":"P1"},{"n":"场景一致性","prio":"P1"},{"n":"主体一致性","prio":"P0"},{"n":"颜色一致性","prio":"P1"},{"n":"风格一致性","flag":"dup","g":"temporal","prio":"P1"},{"n":"音乐音效一致连贯性","prio":"P1"},{"n":"人声一致连贯性","prio":"P0"}]}]},{"name":"基础音质","subs":[{"name":"失真感知","tags":[{"n":"音效失真","prio":"P0"},{"n":"音乐失真","prio":"P0"},{"n":"人声失真（原电音）","prio":"P0"}]},{"name":"噪声感知","tags":[{"n":"底噪","prio":"P1"},{"n":"电流噪音","prio":"P0"},{"n":"高频噪音","prio":"P0"},{"n":"生理杂音","prio":"P1"},{"n":"乐音杂音","prio":"P1"},{"n":"物理杂音","prio":"P0"}]},{"name":"音量感知","tags":[{"n":"持续响度异常","prio":"P1"},{"n":"瞬时响度异常","prio":"P0"}]}]},{"name":"音频指令遵从","subs":[{"name":"通用指令","tags":[{"n":"指令遗漏","prio":"P0"},{"n":"指令遗漏（音画）","prio":"P0"},{"n":"指令偏差（音乐/音效）","prio":"P1"},{"n":"指令偏差（音画）","prio":"P1"},{"n":"时序顺序错误","prio":"P0"},{"n":"多镜头音频衔接及归属错误","prio":"P1"},{"n":"音频否定指令响应错误","prio":"P0"}]},{"name":"语音指令","tags":[{"n":"台词错误","prio":"P0"},{"n":"添加台词","prio":"P0"},{"n":"台词缺少","prio":"P0"},{"n":"年龄错误","prio":"P0"},{"n":"性别错误","prio":"P0"},{"n":"语言/方言错误","prio":"P0"},{"n":"语气不当","prio":"P1"},{"n":"情绪错误","prio":"P0"},{"n":"角色指代错误","prio":"P0"},{"n":"表现方式错误","prio":"P1"}]},{"name":"音效指令","tags":[{"n":"修饰词响应差","prio":"P2"}]},{"name":"音乐指令","tags":[{"n":"音乐类型/流派错误","prio":"P0"},{"n":"乐器错误","prio":"P1"},{"n":"速度节奏错误","prio":"P1"},{"n":"情绪氛围错误","prio":"P2"}]}]},{"name":"音画同步","subs":[{"name":"口型匹配度","tags":[{"n":"部分口型不匹配","prio":"P1"},{"n":"严重口型不匹配","prio":"P0"},{"n":"非讲话人张口","prio":"P0"}]},{"name":"音画匹配度","tags":[{"n":"音效与视频内容不匹配","prio":"P0"},{"n":"配乐与视频内容不匹配","prio":"P1"},{"n":"语音属性与视频内容不匹配","prio":"P0"},{"n":"音画节奏不匹配","prio":"P1"}]}]},{"name":"音频质量和表现力","subs":[{"name":"语音质量","tags":[{"n":"含混/发音错误","prio":"P0"},{"n":"结巴重复","prio":"P0"},{"n":"语速/停顿异常","prio":"P0"},{"n":"人声表现不自然","prio":"P1"},{"n":"音色差异不足","prio":"P1"},{"n":"音色持续性差","prio":"P0"},{"n":"语音空间异常","prio":"P2"},{"n":"语意不明","prio":"P0"},{"n":"台词与场景不匹配","prio":"P0"}]},{"name":"音效质量","tags":[{"n":"音效材质异常","prio":"P1"},{"n":"音效辨识度低","prio":"P1"},{"n":"音效空间异常（静态逻辑）","prio":"P2"},{"n":"动态表现形式不合理","prio":"P1"},{"n":"音效持续性差","prio":"P2"}]},{"name":"音乐质量","tags":[{"n":"旋律听感不协和","prio":"P1"},{"n":"和声听感不协和","prio":"P1"},{"n":"乐器丰富度不足","prio":"P2"},{"n":"音乐空间异常","prio":"P2"},{"n":"音乐持续性差","prio":"P2"}]},{"name":"多模态综合表现力","tags":[{"n":"多语音景深构建异常","prio":"P2"},{"n":"多语音平面分布异常（ASMR 等）","prio":"P2"},{"n":"多音效景深构建异常","prio":"P2"},{"n":"多音效平面分布异常","prio":"P2"},{"n":"多主体音效丰富度差","prio":"P2"},{"n":"多音乐衔接度不足","prio":"P2"},{"n":"声音元素完整度","prio":"P1"},{"n":"声音设计合理表现力","prio":"P2"},{"n":"风格化音频内容相对关系","prio":"P2"}]}]},{"name":"音色克隆","subs":[{"name":"音色偏离","tags":[{"n":"轻微音色偏离","prio":"P1"},{"n":"严重音色偏离","prio":"P0"},{"n":"音色指代错误","prio":"P0"}]}]}];
+const TAX_AFTER = [{"name":"动态质量","rules":[],"subs":[{"name":"动态基础质量（物理层）","rules":[{"kind":"需硬隔离","r":"细节纹理抖动仅限帧间位移；单帧纹理不真实 → 画面质量·纹理虚假","for":["细节纹理抖动"]},{"kind":"需硬隔离","r":"结构异常仅限运动形变；静态边缘光晕 → 画面质量·主体边缘异常","for":["生物结构异常","非生物结构异常"]},{"kind":"需锚定","r":"速度异常仅限违反物理速率；符合物理但违反 Prompt → 指令遵循·播放速度不符","for":["速度异常"]},{"kind":"需互斥","r":"动态时序不一致管长程逻辑（>3秒），卡顿掉帧感管微观插值平滑度","for":["动态时序不一致","卡顿掉帧感"]},{"kind":"需锚定","r":"转场异变若由切镜导致且属主体/道具穿帮 → 指令遵循·镜头间内容混淆；仅单镜头内无理由突现才归动态基础质量","for":["转场异变"]},{"kind":"需定优先级","r":"瑕疵同时涉及运动与静态画面时优先归动态质量；仅当静止单帧完全可复现且与运动无关才归画面质量"}],"tags":[{"n":"生物结构异常","act":"拆分","from":"合理性（+生物类结构异常）","why":"5 个 facet 提升为独立三级标签——facet 无法独立分配优先级，也无法独立统计召回。","prio":"P0","rubric":{"status":"OK","what":"人物 / 动物的身体在运动过程中出现解剖学上不可能的结构错误。","symptoms":["反关节扭曲","多指或少指","四肢交叉融化粘连","面部肌肉走向诡异"],"requires":"主体整体仍可辨识，错误局限在局部结构"},"rules":[{"kind":"需硬隔离","r":"主体已整体撕裂 / 溶解到不可辨识 → `崩坏`"},{"kind":"需硬隔离","r":"结构正确但动作姿态生硬不自然 → `运动不真实`"},{"kind":"需硬隔离","r":"静止单帧就能复现的抠图感 / 边缘光晕 → 画面质量 `主体边缘异常`"}],"demoKey":"生物类结构异常"},{"n":"非生物结构异常","act":"拆分","from":"合理性（+非生物结构异常）","why":"5 个 facet 提升为独立三级标签——facet 无法独立分配优先级，也无法独立统计召回。","prio":"P1","rubric":{"status":"OK","what":"物体 / 建筑 / 载具在运动过程中出现结构性形变、断裂或自穿插。","symptoms":["桌椅车辆建筑在运动中形变断裂","车轮陷入地面","方向盘穿透仪表台"],"requires":"错误在物体自身结构内，主体仍可辨识"},"rules":[{"kind":"需硬隔离","r":"错误发生在两个主体之间（手嵌进另一只手）→ `主体间穿模`"},{"kind":"需硬隔离","r":"主体不可辨识 → `崩坏`"},{"kind":"需硬隔离","r":"静态单帧即可复现的边缘瑕疵 → 画面质量 `主体边缘异常`"}]},{"n":"主体间穿模","act":"拆分","from":"合理性（+主体间交互）","why":"5 个 facet 提升为独立三级标签——facet 无法独立分配优先级，也无法独立统计召回。","prio":"P1","rubric":{"status":"OK","what":"两个主体之间、或主体与道具之间发生穿透、重叠、接触失效。","symptoms":["握手时两只手互相嵌入","人物穿过桌面","刀切进苹果但苹果未裂","脚陷入地面"],"requires":"判定对象是两个主体之间的交界处"},"rules":[{"kind":"需锚定","r":"仅限主体与主体 / 道具之间的穿插、重叠、接触失效"},{"kind":"需硬隔离","r":"形变发生在单个主体自身结构内 → `生物结构异常` / `非生物结构异常`"},{"kind":"需硬隔离","r":"接触正确但受力反馈不合物理（撞墙后加速）→ `不符合物理规律`"}]},{"n":"不符合物理规律","act":"拆分","from":"合理性（+不符合物理规律）","why":"5 个 facet 提升为独立三级标签——facet 无法独立分配优先级，也无法独立统计召回。","prio":"P1","rubric":{"status":"OK","what":"运动违反重力、惯性、碰撞等可量化的物理规律。","symptoms":["物体无支撑悬浮","急刹车时身体不前倾","球撞墙后反而加速","液体逆流"],"requires":"违反的是可量化的物理规律（重力 / 惯性 / 碰撞）"},"rules":[{"kind":"需锚定","r":"违反重力 / 惯性 / 碰撞等物理规律；速率类异常 → `速度异常`"},{"kind":"需硬隔离","r":"物理成立但违背生活常识（雪地走路无脚印）→ `不符合现实常识`"},{"kind":"需硬隔离","r":"仅速率忽快忽慢 → `速度异常`"},{"kind":"需硬隔离","r":"穿透接触失效 → `主体间穿模`"}]},{"n":"不符合现实常识","act":"拆分","from":"合理性（+不符合现实常识）","why":"5 个 facet 提升为独立三级标签——facet 无法独立分配优先级，也无法独立统计召回。","prio":"P1","rubric":{"status":"OK","what":"物理规律上说得通，但违背现实世界的常识与因果。","symptoms":["水面倒影比本体动作快","雪地里走路不留脚印","火焰不产生阴影","镜中影像与本体不一致"],"requires":"物理规律成立，但违背现实世界的常识与因果"},"rules":[{"kind":"需锚定","r":"物理上可成立但违反现实常识（如雪地赤脚无痕）"},{"kind":"需硬隔离","r":"直接违反重力 / 惯性 / 碰撞 → `不符合物理规律`"},{"kind":"需硬隔离","r":"属于结构错误 → `生物结构异常` / `非生物结构异常`"},{"kind":"需硬隔离","r":"属于叙事逻辑断裂 → `叙事混乱与不完整`"}]},{"n":"合理性","act":"拆分","why":"5 个 facet 提升为独立三级标签——facet 无法独立分配优先级，也无法独立统计召回。","gone":true},{"n":"崩坏","act":"合并","from":"明显崩坏 + 轻微崩坏","why":"程度副词作标签区隔导致主观阈值漂移，合并为单一标签，程度另记。","prio":"P0","rubric":{"status":"OK","what":"画面主体出现结构性撕裂、局部溶解或消失，主体已不可辨识。","symptoms":["主体轮廓溶解","拓扑撕裂","局部消失后重建错位"],"requires":"主体身份已无法辨认。程度轻重不再用标签区分，另记严重度分数"},"rules":[{"kind":"需硬隔离","r":"主体仍可辨识、仅局部结构错误 → `生物结构异常` / `非生物结构异常`（两者与本标签互斥，不可并打）"},{"kind":"需硬隔离","r":"主体正常但纹理在帧间抖动 → `细节纹理抖动`"}],"demoKey":"崩坏"},{"n":"速度异常","act":"维持","prio":"P1","rubric":{"status":"OK","what":"运动速率违反物理规律地忽快忽慢。","symptoms":["「缓缓飘落」的树叶像石头一样砸下","动作在同一镜头内无理由加速或减速"],"requires":"速率变化找不到物理解释"},"rules":[{"kind":"需硬隔离","r":"速度符合物理但不符 Prompt 设定的慢动作 / 延时 → 指令遵循 `播放速度不符`"},{"kind":"需硬隔离","r":"主体关节运动速率不符 Prompt → 指令遵循 `动作速度不符`"},{"kind":"需硬隔离","r":"镜头移动速率不符 Prompt → 指令遵循 `运镜速度不符`"},{"kind":"需硬隔离","r":"运动不平滑呈幻灯片跳跃 → `卡顿掉帧感`"}]},{"n":"转场异变","act":"维持","prio":"P0","rubric":{"status":"OK","what":"单镜头内主体无理由突变为另一形态。","symptoms":["走路的人瞬间变成一棵树","主体或前景物体形态剧烈改变"],"requires":"发生在单镜头内，且无任何转场动机"},"rules":[{"kind":"需硬隔离","r":"变化由切镜导致且属主体 / 道具穿帮 → 指令遵循 `镜头间内容混淆`"},{"kind":"需硬隔离","r":"转场手法本身不符 Prompt → 指令遵循 `转场方式错误`"},{"kind":"需硬隔离","r":"主体溶解而非替换 → `崩坏`"}]},{"n":"细节纹理抖动","act":"合并","from":"明显细节纹理抖动 + 轻微细节纹理抖动","why":"同上，程度副词不作标签区隔。","prio":"P1","rubric":{"status":"OK","what":"纹理在相邻帧之间像水波一样位移或闪烁。","symptoms":["衣服花纹","地面砖缝","发丝在帧间持续位移抖动"],"requires":"程度轻重不再用标签区分，另记严重度分数"},"rules":[{"kind":"需硬隔离","r":"单帧静止就能看出纹理不真实（塑料感、糊成一团）→ 画面质量 `纹理虚假`"},{"kind":"需硬隔离","r":"抖动表现为整体亮度忽明忽暗 → `明暗闪烁`"},{"kind":"需硬隔离","r":"表现为色彩污染拖影 → `帧间颜色染色`"},{"kind":"需硬隔离","r":"表现为果冻状流体扭曲 → `波动扭曲`"}]},{"n":"帧间颜色染色","act":"重命名","from":"明显帧间颜色染色或伪影","why":"去掉程度副词，收敛表述。","prio":"P0","rubric":{"status":"OK","what":"相邻帧之间出现色彩污染或压缩伪影。","symptoms":["红色拖影","青色溢出","过曝残影式的块状伪影"],"requires":"颜色在帧间相互污染"},"rules":[{"kind":"需硬隔离","r":"单帧即可复现的整体色偏 / 过曝 → 画面质量 `曝光光影或色彩异常`"},{"kind":"需硬隔离","r":"整体亮度忽明忽暗而非染色 → `明暗闪烁`"},{"kind":"需硬隔离","r":"属编解码块效应且静帧可见 → 画面质量 `类似编解码画质现象`"}]},{"n":"波动扭曲","act":"维持","prio":"P1","rubric":{"status":"OK","what":"背景或物体边缘出现果冻效应式的类流体扭曲。","symptoms":["画面局部像透过火焰或水面观看","边缘呈波浪状起伏"],"requires":"通常由帧插值失败引起"},"rules":[{"kind":"需硬隔离","r":"扭曲导致主体结构错误 → `生物结构异常` / `非生物结构异常`"},{"kind":"需硬隔离","r":"仅纹理在帧间位移而无流体感 → `细节纹理抖动`"},{"kind":"需硬隔离","r":"单帧即可见的镜头畸变 → 画面质量 `主体边缘异常`"}],"demoKey":"波动扭曲"},{"n":"明暗闪烁","act":"维持","prio":"P0","rubric":{"status":"OK","what":"画面整体或局部亮度在连续帧间剧烈忽明忽暗。","symptoms":["连续帧之间亮度跳变","呈频闪感"],"requires":"找不到画面内的光源变化依据"},"rules":[{"kind":"需硬隔离","r":"亮度 / 色调随时间缓慢漂移而非闪烁 → `光影风格时序不一致`"},{"kind":"需硬隔离","r":"单帧即可复现的过曝 → 画面质量 `曝光光影或色彩异常`"},{"kind":"需硬隔离","r":"伴随色彩污染 → `帧间颜色染色`"}]},{"n":"卡顿掉帧感","act":"维持","prio":"P0","rubric":{"status":"OK","what":"运动不平滑，呈幻灯片式跳跃，缺少中间帧过渡。","symptoms":["运动轨迹断续","有明显跳格感"],"requires":"判定尺度是帧到帧的平滑度——微观层面帧间插值失败"},"rules":[{"kind":"需硬隔离","r":"长程（>3 秒）物体位置 / 状态前后不一致 → `动态时序不一致`（两者按作用尺度互斥）"},{"kind":"需硬隔离","r":"速率忽快忽慢但画面平滑 → `速度异常`"},{"kind":"需硬隔离","r":"主体完全僵死不动 → `异常静止`"}]},{"n":"动态时序不一致","act":"重命名","from":"动态时序一致性","why":"陈述式改缺陷式——「一致性」本身不是问题，其反面才是。","prio":"P0","rubric":{"status":"OK","what":"长程范围内物体的位置或状态前后不连贯。","symptoms":["先前放在桌上的杯子后来凭空消失","瞬移","状态改变"],"requires":"跨 3 秒以上观察，长程逻辑断裂"},"rules":[{"kind":"需硬隔离","r":"仅帧间插值不平滑的微观跳跃 → `卡顿掉帧感`（两者按作用尺度互斥）"},{"kind":"需硬隔离","r":"不一致发生在跨镜头之间 → 一致性维度对应标签"},{"kind":"需硬隔离","r":"属光照色调漂移 → `光影风格时序不一致`"}]},{"n":"光影风格时序不一致","act":"重命名","from":"光影风格时序一致性","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"随时间推进，画面的色调、光照方向或风格发生漂移。","symptoms":["同一场景上一秒正午硬光下一秒阴天黑云","光源方向无理由改变","画风在镜头内逐渐漂移"],"requires":"色调 / 光照随时间缓慢漂移，而非逐帧频闪"},"rules":[{"kind":"需硬隔离","r":"本标签管帧间色调 / 光照跳动；单帧整体偏色 / 过曝 → 画面质量 `曝光光影或色彩异常`"},{"kind":"需硬隔离","r":"亮度剧烈频闪而非缓慢漂移 → `明暗闪烁`"},{"kind":"需硬隔离","r":"不一致发生在跨镜头之间 → 一致性 `风格不一致` / `颜色不一致`"},{"kind":"需硬隔离","r":"单帧即可复现的色彩问题 → 画面质量 `曝光光影或色彩异常`"}]},{"n":"镜头晃动","act":"维持","prio":"P1","rubric":{"status":"OK","what":"Prompt 未要求的情况下镜头出现非预期摇晃。","symptoms":["画面持续抖动","令人眩晕的摇晃"],"requires":"Prompt 没有「手持」「晃动」等描述"},"rules":[{"kind":"需硬隔离","r":"Prompt 要求了手持感 → 不打本标签"},{"kind":"需硬隔离","r":"晃动幅度 / 类型不符 Prompt 的运镜要求 → 指令遵循 `运镜类型错误`"},{"kind":"需硬隔离","r":"画面平移但主体僵死 → `异常静止`"}]},{"n":"异常静止","act":"维持","prio":"P0","rubric":{"status":"OK","what":"理应运动的主体完全僵死不动，与环境脱节。","symptoms":["风中的旗帜完全静止","人物头发完全静止","水面完全静止"],"requires":"主体在应当有动作的时段内一帧不动"},"rules":[{"kind":"需硬隔离","r":"主体有动作但幅度整体偏小 → `动态幅度更大`（对比场景）"},{"kind":"需硬隔离","r":"运动断续跳跃而非静止 → `卡顿掉帧感`"},{"kind":"需硬隔离","r":"Prompt 明确要求静止 → 不打本标签"}]},{"n":"文字未保持","act":"维持","prio":"P1","rubric":{"status":"OK","what":"画面文字在运动过程中扭曲、模糊消失或变形。","symptoms":["文字随运动逐渐扭曲","抖动","消失"],"requires":"文字在静止首帧可读，但动起来就坏掉"},"rules":[{"kind":"需硬隔离","r":"文字从一开始就不可读 → 画面质量 `画面文字不可读`"},{"kind":"需硬隔离","r":"文字内容 / 拼写与 Prompt 不符 → 指令遵循 `文字生成错误`"}]},{"n":"其他动态质量问题","act":"维持","prio":"P2","rubric":{"status":"OK","what":"兜底标签：确属动态质量缺陷，但不属于本子维度任何已有标签。","symptoms":[],"requires":"仅当穷举本子维度全部标签后仍无法归类时使用，并在备注里写明具体现象"},"rules":[{"kind":"需硬隔离","r":"能归入任何已有标签时一律不打本标签"},{"kind":"需硬隔离","r":"属画面 / 指令 / 一致性 / 音频维度的问题应归各自维度"}]},{"n":"明显崩坏","act":"合并","why":"并入「崩坏」。","gone":true,"rules":[{"kind":"需定优先级","r":"主体已不可辨识 → `崩坏`；主体可辨识但局部结构错误 → `生物结构异常` / `非生物结构异常`。两者互斥"}],"demoKey":"崩坏"},{"n":"轻微崩坏","act":"合并","why":"并入「崩坏」。","gone":true,"rules":[{"kind":"需定优先级","r":"主体已不可辨识 → `崩坏`；主体可辨识但局部结构错误 → `生物结构异常` / `非生物结构异常`。两者互斥"}]},{"n":"明显细节纹理抖动","act":"合并","why":"并入「细节纹理抖动」。","gone":true,"rules":[{"kind":"需硬隔离","r":"本标签仅限帧间位移 / 闪烁；单帧纹理不真实 → 画面质量 `纹理虚假`"}]},{"n":"轻微细节纹理抖动","act":"合并","why":"并入「细节纹理抖动」。","gone":true,"rules":[{"kind":"需硬隔离","r":"本标签仅限帧间位移 / 闪烁；单帧纹理不真实 → 画面质量 `纹理虚假`"}]}]},{"name":"动态美学及视听叙事（艺术层）","subj":true,"rules":[{"kind":"需锚定","r":"创意性为正向加分标签（非缺陷），rubric 中须标明其打标方向与其余标签相反","for":["创意性"]}],"tags":[{"n":"运动不真实","act":"重命名","from":"运动真实性","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"动作不穿帮，但运动方式不像真实人 / 物。","symptoms":["机器人式走路","奔跑时摆臂幅度不对","肢体协调性失真"],"requires":"结构与物理都没错，问题只在「像不像真的」这一层"},"rules":[{"kind":"需定优先级","r":"凡运动相关的瑕疵优先归动态质量；仅当瑕疵在静止单帧中完全可复现时才归画面质量"},{"kind":"需硬隔离","r":"出现解剖结构错误 → `生物结构异常`；违反重力惯性 → `不符合物理规律`"},{"kind":"需定优先级","r":"视频以动态为首要特征，运动相关的瑕疵优先归本维度，不归画面美学"}]},{"n":"表演不真实","act":"重命名","from":"表演真实性","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"角色的情绪表达与其当下心理状态不符。","symptoms":["「惊喜」演成瞪眼呆滞","微表情缺失","眼神与台词情绪脱节","肢体语言与情境冲突"],"requires":"判定对象是情绪表达，而非动作的物理真实度"},"rules":[{"kind":"需定优先级","r":"凡运动相关的瑕疵优先归动态质量；仅当瑕疵在静止单帧中完全可复现时才归画面质量"},{"kind":"需硬隔离","r":"问题在动作自然度而非情绪 → `运动不真实`；表情不符 Prompt 指定情绪 → 指令遵循 `表情不符`"}]},{"n":"叙事节奏较差","act":"维持","prio":"P1","rubric":{"status":"OK","what":"整段视频的推进速度不恰当，观感拖沓或仓促。","symptoms":["吃个早餐用了 15 秒慢镜头","关键情节一闪而过","信息密度与时长严重不匹配"],"requires":"判定对象是整段叙事的时间分配"},"rules":[{"kind":"需硬隔离","r":"镜头推拉摇移速度不当 → `运镜节奏较差`；镜头停留时长与信息量不匹配 → `剪辑节奏较差`"}]},{"n":"叙事混乱与不完整","act":"维持","prio":"P0","rubric":{"status":"OK","what":"多镜头叙事的事件逻辑断裂或没有收束。","symptoms":["镜头A在打架镜头B突然在喝茶","毫无承接关系","事件缺少结局"],"requires":"镜头之间的因果链断裂，而非单个镜头内部的问题"},"rules":[{"kind":"需硬隔离","r":"仅最后一镜没收尾 → 指令遵循 `尾镜叙事缺失`；镜头间毫无关联且跳跃过大 → 指令遵循 `镜头混乱`"},{"kind":"需锚定","r":"Prompt 本身就是碎片化无因果的剧本时，模型如实生成不算缺陷，不打本标签"}]},{"n":"景别视角不当","act":"重命名","from":"景别视角维度","why":"陈述式改缺陷式，标注员原先无法判断打了是好还是坏。","prio":"P1","rubric":{"status":"OK","what":"景别与拍摄视角的选择没有服务于叙事。","symptoms":["呆板套用同一景别","视角选择与情绪相悖","该特写时用全景"],"requires":"Prompt 未指定景别，纯粹是艺术选择欠佳"},"rules":[{"kind":"需硬隔离","r":"Prompt 指定了景别 / 视角而未实现 → 指令遵循 `景别与拍摄视角错误`"}]},{"n":"运镜节奏较差","act":"维持","prio":"P1","rubric":{"status":"OK","what":"镜头推拉摇移的速度与当下情绪不匹配。","symptoms":["恐怖氛围镜头移动太快","温馨场景镜头忽快忽慢"],"requires":"运镜类型本身正确，问题只在速度与情绪的配合"},"rules":[{"kind":"需硬隔离","r":"运镜速度不符 Prompt → 指令遵循 `运镜速度不符`；速度违反物理 → `速度异常`"}]},{"n":"剪辑节奏较差","act":"维持","prio":"P1","rubric":{"status":"OK","what":"镜头停留时长与其信息量不匹配。","symptoms":["信息量大但闪得太快","信息量小但固定太久"],"requires":"多镜头场景；判定对象是每个镜头的时长分配"},"rules":[{"kind":"需硬隔离","r":"切镜时间点不符 Prompt → 指令遵循 `切镜时间点错误`；整段推进快慢失当 → `叙事节奏较差`"}]},{"n":"创意性","act":"维持","why":"加分项而非缺陷，不作缺陷化重命名，须在 rubric 中标明为正向标签。","prio":"P2","rubric":{"status":"OK","what":"正向加分标签：动态表现有意料之外的艺术想象力。","symptoms":["富有想象力的运动设计","巧妙的转场创意","超出预期的视听表达"],"requires":"打标方向与其余标签相反——这是加分项，表现出色才打，不是缺陷"},"rules":[{"kind":"需锚定","r":"本标签为正向加分项，打标方向与其余缺陷标签相反——表现出色才打"},{"kind":"需禁用","r":"不得当作缺陷标签使用；缺乏创意不打本标签，不打即为无加分"}]},{"n":"音频基础质量差","act":"移出","why":"与音频评测维度完全重复（P1 级冲突），强制归口到音频·音质。","gone":true},{"n":"音画不同步","act":"移出","why":"强制归口到音频评测维度·音画同步。","gone":true,"demoKey":"音画不同步"},{"n":"音画不匹配","act":"移出","why":"强制归口到音频评测维度·音画同步。","gone":true},{"n":"风格适配性","act":"移出","why":"音频类标签全部迁移至音频评测维度。","gone":true},{"n":"情绪准确性","act":"移出","why":"音频类标签全部迁移至音频评测维度。","gone":true},{"n":"节奏配合度","act":"移出","why":"音频类标签全部迁移至音频评测维度。","gone":true},{"n":"声音丰富与融合自然度","act":"移出","why":"音频类标签全部迁移至音频评测维度。","gone":true},{"n":"声音切换自然流畅","act":"移出","why":"音频类标签全部迁移至音频评测维度。","gone":true}]},{"name":"动态幅度（对比专用）","rules":[],"tags":[{"n":"动态幅度更大","act":"维持","note":"仅双模型对比场景","prio":"P1","rubric":{"status":"OK","what":"双模型对比专用：客观标注哪一个动得更猛。","symptoms":["主体运动范围更广","位移距离更远","动作激烈程度更高"],"requires":"仅在 A/B 双视频对比场景使用；不涉及好坏，只量长短"},"rules":[{"kind":"需禁用","r":"单视频评测场景不得使用本标签"},{"kind":"需硬隔离","r":"主体完全僵死不动 → `异常静止`（那是缺陷，本标签不是）"}]}]}]},{"name":"画面质量","rules":[],"subs":[{"name":"基础画质","rules":[{"kind":"需锚定","r":"类似编解码画质现象仅限块状噪点/蚊式噪声","for":["类似编解码画质现象"]}],"tags":[{"n":"清晰度低","act":"维持","prio":"P0","rubric":{"status":"OK","what":"画面整体模糊、缺乏细节纹理，锐度不足。","symptoms":["头发丝糊成一片","远景一片浆糊","肉感明显"],"requires":"成因是分辨率不足或对焦不实导致的整体锐度缺失"},"rules":[{"kind":"需互斥","r":"块状 / 蚊式压缩伪影 → `类似编解码画质现象`"},{"kind":"需硬隔离","r":"仅焦平面位置错误而非整体失锐 → `景深与焦点问题`"}]},{"n":"类似编解码画质现象","act":"维持","prio":"P1","rubric":{"status":"OK","what":"画面出现视频压缩伪影。","symptoms":["色块（马赛克）","蚊式噪点（边缘蠕动）","拖影模糊"],"requires":"成因是高压缩率 / 低码率，呈「网络流媒体低清感」"},"rules":[{"kind":"需锚定","r":"仅限压缩伪影（块状噪点 / 蚊式噪声）；生成渲染错误（平铺 / 塑料感）→ `纹理虚假`"},{"kind":"需互斥","r":"仅限压缩伪影；纹理像平铺 / 塑料感 → `纹理虚假`；整体失锐 → `清晰度低`"},{"kind":"需硬隔离","r":"色彩污染发生在帧之间 → 动态质量 `帧间颜色染色`"},{"kind":"需互斥","r":"非预期的脏点 / 孤立像素块而非压缩伪影 → `画面杂质`"}]}]},{"name":"画面基础内容","rules":[{"kind":"需硬隔离","r":"画面文字不可读管视觉扭曲模糊，指令遵循·文字生成错误管拼写/语言正误","for":["画面文字不可读"]},{"kind":"需硬隔离","r":"纹理虚假仅限静态单帧渲染错误（平铺/塑料），与类似编解码画质现象互斥","for":["纹理虚假"]},{"kind":"需硬隔离","r":"曝光光影或色彩异常仅限单帧整体偏色/过曝；帧间亮度或色调跳动 → 动态·明暗闪烁 / 光影风格时序不一致","for":["曝光光影或色彩异常"]},{"kind":"需定优先级","r":"构图不符 Prompt → 指令遵循·景别与拍摄视角错误；Prompt 无要求且裁切怪异 → 异常构图","for":["异常构图"]},{"kind":"需硬隔离","r":"景深与焦点问题仅限光学虚化错误；运动导致的边缘撕裂归动态质量","for":["景深与焦点问题"]}],"tags":[{"n":"曝光光影或色彩异常","act":"维持","prio":"P1","rubric":{"status":"OK","what":"曝光过度 / 不足，或白平衡严重偏移。","symptoms":["整体或局部过曝死白","欠曝死黑","整体偏绿偏紫偏黄","与 Prompt 光照设定相悖"],"requires":"单帧静止即可复现"},"rules":[{"kind":"需硬隔离","r":"仅限单帧或静态画面整体偏色 / 过曝；帧间亮度 / 色调跳动 → 动态质量 `明暗闪烁` 或 `光影风格时序不一致`"},{"kind":"需硬隔离","r":"亮度在帧间忽明忽暗 → 动态质量 `明暗闪烁`；色调随时间漂移 → 动态质量 `光影风格时序不一致`；帧间色彩污染 → 动态质量 `帧间颜色染色`"}],"demoKey":"曝光光影或色彩异常"},{"n":"油腻感","act":"维持","prio":"P0","rubric":{"status":"OK","what":"表面过度平滑、反光异常，呈塑料蜡像感。","symptoms":["皮肤缺乏毛孔肌理","过度磨皮滤镜感","物体表面反光油腻"],"requires":"AI 生成的典型通病，单帧即可判定"},"rules":[{"kind":"需硬隔离","r":"纹理像人工绘制或重复平铺 → `纹理虚假`；材质物理属性表现不佳（金属无金属感）不在本体系内"}]},{"n":"异常构图","act":"维持","prio":"P1","rubric":{"status":"OK","what":"主体裁切位置违背基本摄影构图法则。","symptoms":["头部被切掉一半","地平线严重歪斜","主体被挤到角落"],"requires":"Prompt 未提出构图要求，纯粹是画面裁切失当"},"rules":[{"kind":"需定优先级","r":"构图不符 Prompt → 指令遵循 `景别与拍摄视角错误`；Prompt 无要求且裁切怪异 → 本标签"}]},{"n":"画面杂质","act":"维持","prio":"P1","rubric":{"status":"OK","what":"画面存在非预期的脏点、噪点或孤立像素块。","symptoms":["随机脏点坏点","闪烁噪点","背景中来历不明的孤立像素块"],"requires":"杂质与画面内容无关，不是主体本身的缺陷"},"rules":[{"kind":"需互斥","r":"呈块状 / 蚊式压缩伪影 → `类似编解码画质现象`"},{"kind":"需硬隔离","r":"噪点在帧间闪动为主 → 动态质量 `细节纹理抖动`"}]},{"n":"主体边缘异常","act":"维持","prio":"P1","rubric":{"status":"OK","what":"主体与背景交界处出现抠图未净的瑕疵。","symptoms":["半透明光晕","毛边锯齿","闪烁虚影","边缘生硬融不进背景"],"requires":"静态合成瑕疵，静止单帧即可复现"},"rules":[{"kind":"需硬隔离","r":"仅限静态合成边缘瑕疵（抠图感 / 光晕）；运动导致的形变 → 动态质量 `生物结构异常` / `非生物结构异常`"},{"kind":"需硬隔离","r":"运动导致的形变 → 动态质量 `生物结构异常` / `非生物结构异常`"},{"kind":"需硬隔离","r":"边缘虚化源于焦平面错误 → `景深与焦点问题`"}]},{"n":"景深与焦点问题","act":"维持","prio":"P1","rubric":{"status":"OK","what":"焦平面位置错误或景深虚化不符光学规律。","symptoms":["近处主体虚化而远景清晰","虚化过渡生硬","光斑形状怪异"],"requires":"判定对象是焦点与景深的光学正确性"},"rules":[{"kind":"需硬隔离","r":"仅限光学虚化错误；运动导致的边缘撕裂 / 锯齿 → 动态质量"},{"kind":"需硬隔离","r":"整体失锐而非焦平面错位 → `清晰度低`；边缘瑕疵源于合成抠图 → `主体边缘异常`"}]},{"n":"纹理虚假","act":"维持","prio":"P2","rubric":{"status":"OK","what":"表面纹理像人工绘制或重复平铺，缺乏自然随机性。","symptoms":["木纹布料编织纹重复平铺（Tiling）","皮肤毛孔像贴图","纹理缺乏随机性"],"requires":"单帧静止即可复现的渲染错误"},"rules":[{"kind":"需硬隔离","r":"仅限静态单帧渲染错误（平铺 / 塑料感），与 `类似编解码画质现象` 互斥；帧间位移 / 闪烁 → 动态质量 `细节纹理抖动`"},{"kind":"需硬隔离","r":"纹理在帧间位移 / 闪烁 → 动态质量 `细节纹理抖动`"},{"kind":"需互斥","r":"呈块状 / 蚊式压缩伪影 → `类似编解码画质现象`"}]},{"n":"画面文字不可读","act":"重命名","from":"文字不可读","why":"加「画面」前缀标明是视觉层，与指令遵循的语义层文字问题区隔。","prio":"P1","rubric":{"status":"OK","what":"画面中的文字扭曲变形、笔画粘连，无法辨认。","symptoms":["招牌书本衣物上的字母汉字扭曲","拼写残缺","笔画粘连"],"requires":"视觉层面的不可读——看不清"},"rules":[{"kind":"需硬隔离","r":"本标签管视觉扭曲 / 模糊；拼写 / 语言正误 → 指令遵循 `文字生成错误`"},{"kind":"需硬隔离","r":"能看清但拼写 / 语言错误 → 指令遵循 `文字生成错误`（语义层）"},{"kind":"需硬隔离","r":"首帧可读、动起来才坏掉 → 动态质量 `文字未保持`"}],"demoKey":"文字不可读"}]},{"name":"画面美学","subj":true,"rules":[],"tags":[{"n":"材质质感较差","act":"删除","why":"主观性过强、无客观锚点，方差过大，整节不纳入体系。","gone":true},{"n":"空间层次与构图布局欠佳","act":"删除","why":"同上，整节删除。","gone":true},{"n":"色彩搭配与光影表现欠佳","act":"删除","why":"同上，整节删除。","gone":true},{"n":"环境布景欠佳","act":"删除","why":"同上，整节删除。","gone":true},{"n":"主体美感不足(服化)","act":"删除","why":"同上，整节删除。","gone":true}]}]},{"name":"指令遵循","rules":[],"subs":[{"name":"基础内容指令遵循","rules":[{"kind":"需锚定","r":"主宾语被交换 → 响应混淆与指代错误；仅距离/角度/左右数值错 → 空间关系与方向错误","for":["响应混淆与指代错误","空间关系与方向错误"]},{"kind":"需锚定","r":"动作 / 运镜时序顺序错误判各自分步顺序，动作与运镜时序错位判两者同步性；先后颠倒一律归前者","for":["动作时序顺序错误","运镜时序顺序错误","动作与运镜时序错位"]},{"kind":"需硬隔离","r":"动作速度不符限主体关节运动速率，运镜速度不符限镜头移动速率，播放速度不符限全局帧率抽帧 / 插帧","for":["动作速度不符","运镜速度不符","播放速度不符"]},{"kind":"需硬隔离","r":"文字生成错误管拼写/语言正误，画面质量·画面文字不可读管扭曲模糊","for":["文字生成错误"]},{"kind":"需降级","r":"复杂文本理解错误仅当 Prompt 无法拆解为具体标签且模型整体跑偏时启用","for":["复杂文本理解错误"]}],"tags":[{"n":"动作缺失","act":"拆分","from":"动作文本响应（+动作）","why":"facet 提升为独立三级标签——产品对 6 个 facet 逐条给了不同优先级，facet 承载不了。","prio":"P0","rubric":{"status":"OK","what":"Prompt 指定的动作没有被触发。","symptoms":["要求「跳跃」但主体始终没跳","指定动作完全未出现"],"requires":"动作整体未发生"},"rules":[{"kind":"需定优先级","r":"动作发生了但细节不到位 → `动作细节不足`；多步动作只漏其中一步 → `动作时序遗漏`"}]},{"n":"动作细节不足","act":"拆分","from":"动作文本响应（+动作细节）","why":"facet 提升为独立三级标签——产品对 6 个 facet 逐条给了不同优先级，facet 承载不了。","prio":"P1","rubric":{"status":"OK","what":"动作被触发了，但幅度、轨迹或肢体协调性不细腻。","symptoms":["「挥手」但手指不摆动","动作幅度不足","肢体协调性粗糙"],"requires":"动作已发生，问题只在完成质量"},"rules":[{"kind":"需定优先级","r":"动作整体未发生 → `动作缺失`；动作发生但细节不到位 → 本标签"},{"kind":"需定优先级","r":"动作整体未发生 → `动作缺失`"},{"kind":"需硬隔离","r":"动作不像真人 / 真物的自然感问题 → 动态质量 `运动不真实`"}]},{"n":"表情不符","act":"拆分","from":"动作文本响应（+表情）","why":"facet 提升为独立三级标签——产品对 6 个 facet 逐条给了不同优先级，facet 承载不了。","prio":"P1","rubric":{"status":"OK","what":"人物 / 动物的面部情绪不符 Prompt 指定。","symptoms":["要求「悲伤地哭泣」但面无表情","情绪与指令相反"],"requires":"Prompt 明确指定了情绪"},"rules":[{"kind":"需硬隔离","r":"Prompt 未指定情绪、纯粹表演不到位 → 动态质量 `表演不真实`"}]},{"n":"动作时序遗漏","act":"拆分","from":"动作文本响应（+时序遗漏）","why":"facet 提升为独立三级标签——产品对 6 个 facet 逐条给了不同优先级，facet 承载不了。","prio":"P0","rubric":{"status":"OK","what":"多步动作中漏掉了某一步。","symptoms":["「坐下→躺下」只生成了坐下","多步动作缺环"],"requires":"Prompt 描述了多个连续动作步骤"},"rules":[{"kind":"需锚定","r":"各步都在但先后颠倒 → `动作时序顺序错误`"}]},{"n":"动作时序顺序错误","act":"拆分","from":"动作文本响应（+时序顺序错误）","why":"facet 提升为独立三级标签——产品对 6 个 facet 逐条给了不同优先级，facet 承载不了。","prio":"P1","rubric":{"status":"OK","what":"动作发生的先后顺序颠倒。","symptoms":["要求「先蹲下再起跳」实际先跳后蹲","多步动作顺序错乱"],"requires":"各步动作都在，只是顺序错了；判定对象是动作自身的分步顺序"},"rules":[{"kind":"需锚定","r":"判动作自身分步顺序；动作与镜头是否同时间戳对齐 → `动作与运镜时序错位`"},{"kind":"需锚定","r":"动作与镜头变化是否在同一时间戳对齐 → `动作与运镜时序错位`；先后顺序颠倒一律归本标签"},{"kind":"需锚定","r":"缺步而非乱序 → `动作时序遗漏`"}]},{"n":"动作速度不符","act":"拆分","from":"动作文本响应（+速度）","why":"facet 提升为独立三级标签——产品对 6 个 facet 逐条给了不同优先级，facet 承载不了。","prio":"P1","rubric":{"status":"OK","what":"主体动作的快慢不符 Prompt 描述。","symptoms":["要求「缓慢地挥手」实际正常速度","动作节奏与指令不符"],"requires":"判定对象仅限主体关节运动速率"},"rules":[{"kind":"需硬隔离","r":"仅限主体关节运动速率；全局帧率抽帧 / 插帧 → `播放速度不符`"},{"kind":"需硬隔离","r":"全局帧率抽帧 / 插帧效果 → `播放速度不符`；镜头移动速率 → `运镜速度不符`；速度违反物理规律 → 动态质量 `速度异常`"}]},{"n":"动作未响应","act":"拆分","why":"facet 提升为独立三级标签——产品对 6 个 facet 逐条给了不同优先级，facet 承载不了。","gone":true},{"n":"运镜类型错误","act":"拆分","from":"运镜文本响应（+类型）","why":"facet 提升为独立三级标签，与 `动作未响应` 同步拆平。","prio":"P1","rubric":{"status":"OK","what":"未实现 Prompt 指定的运镜方式。","symptoms":["要求「推」实际「摇」","要求环绕实际固定","要求跟拍实际未跟"],"requires":"Prompt 明确指定了推 / 拉 / 摇 / 移 / 跟 / 环绕等类型"},"rules":[{"kind":"需硬隔离","r":"Prompt 未要求晃动但画面抖动 → 动态质量 `镜头晃动`"}]},{"n":"运镜速度不符","act":"拆分","from":"运镜文本响应（+速度）","why":"facet 提升为独立三级标签，与 `动作未响应` 同步拆平。","prio":"P2","rubric":{"status":"OK","what":"镜头移动的快慢不匹配 Prompt。","symptoms":["要求缓慢推近实际急推","镜头移动速率与指令不符"],"requires":"运镜类型正确，仅速度不符；判定对象仅限镜头移动速率"},"rules":[{"kind":"需硬隔离","r":"仅限镜头移动速率；全局帧率抽帧 / 插帧 → `播放速度不符`"},{"kind":"需硬隔离","r":"主体关节运动速率 → `动作速度不符`；全局帧率效果 → `播放速度不符`"},{"kind":"需硬隔离","r":"Prompt 未指定速度、纯粹与情绪不搭 → 动态质量 `运镜节奏较差`"}]},{"n":"运镜时序遗漏","act":"拆分","from":"运镜文本响应（+时序遗漏）","why":"facet 提升为独立三级标签，与 `动作未响应` 同步拆平。","prio":"P1","rubric":{"status":"OK","what":"多段运镜中漏掉了某一段。","symptoms":["要求「先推近再环绕」只做了推近","多段运镜缺环"],"requires":"Prompt 描述了多段连续运镜"},"rules":[{"kind":"需锚定","r":"各段都在但先后颠倒 → `运镜时序顺序错误`"}]},{"n":"运镜时序顺序错误","act":"拆分","from":"运镜文本响应（+时序顺序错误）","why":"facet 提升为独立三级标签，与 `动作未响应` 同步拆平。","prio":"P1","rubric":{"status":"OK","what":"多段运镜的先后顺序颠倒。","symptoms":["要求「先摇后推」实际先推后摇","多段运镜顺序错乱"],"requires":"各段运镜都在，只是顺序错了；判定对象是运镜自身的分段顺序"},"rules":[{"kind":"需锚定","r":"判多段运镜自身先后顺序；与动作的时间戳对齐 → `动作与运镜时序错位`"},{"kind":"需锚定","r":"运镜与动作是否同时间戳对齐 → `动作与运镜时序错位`"},{"kind":"需锚定","r":"缺段而非乱序 → `运镜时序遗漏`"}]},{"n":"景别与拍摄视角错误","act":"拆分","from":"运镜文本响应（+景别与拍摄视角）","why":"facet 提升为独立三级标签，与 `动作未响应` 同步拆平。","prio":"P1","rubric":{"status":"OK","what":"未准确呈现 Prompt 指定的景别或拍摄视角。","symptoms":["要求特写实际全景","要求俯视实际平视","第一人称视角未实现"],"requires":"Prompt 明确指定了景别或视角"},"rules":[{"kind":"需定优先级","r":"Prompt 无构图要求、纯粹裁切怪异 → 画面质量 `异常构图`"},{"kind":"需硬隔离","r":"Prompt 未指定、纯粹艺术选择欠佳 → 动态质量 `景别视角不当`"}]},{"n":"运镜未响应","act":"拆分","why":"facet 提升为独立三级标签，与 `动作未响应` 同步拆平。","gone":true},{"n":"动作与运镜时序错位","act":"重命名","from":"动作与运镜时序","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"动作发生点与镜头变化点没有在同一时间戳对齐。","symptoms":["要求「人物转身时镜头同时拉远」实际转身后镜头才动","动作与运镜不同步"],"requires":"动作和运镜都实现了、顺序也对，问题只在两者的时间戳对齐"},"rules":[{"kind":"需锚定","r":"本标签判同步性（动作发生点与镜头变化点是否在同一时间戳对齐）；先后顺序颠倒一律归 `动作时序顺序错误` / `运镜时序顺序错误`"},{"kind":"需锚定","r":"判同步性；先后顺序颠倒一律归 `动作时序顺序错误` / `运镜时序顺序错误`"}]},{"n":"播放速度不符","act":"重命名","from":"播放速度响应","why":"陈述式改缺陷式。","prio":"P2","rubric":{"status":"OK","what":"整体视频的播放速率不符 Prompt。","symptoms":["要求慢动作实际正常速率","要求延时摄影实际正常","全局帧率抽帧 / 插帧效果错误"],"requires":"判定对象是全局帧率效果，不是主体动作速率"},"rules":[{"kind":"需硬隔离","r":"仅限全局帧率抽帧 / 插帧效果；主体关节运动速率 → `动作速度不符`；镜头移动速率 → `运镜速度不符`"},{"kind":"需硬隔离","r":"主体关节运动速率 → `动作速度不符`；镜头移动速率 → `运镜速度不符`"},{"kind":"需锚定","r":"速度符合物理但违反 Prompt → 本标签；速度违反物理规律 → 动态质量 `速度异常`"}]},{"n":"响应混淆与指代错误","act":"维持","prio":"P0","rubric":{"status":"OK","what":"主宾语颠倒或指代关系错误的严重语义失误。","symptoms":["「苹果在碗里」生成「碗在苹果里」","「男人追女人」生成「女人追男人」"],"requires":"参考系被错误解析——主语 / 宾语发生了交换"},"rules":[{"kind":"需锚定","r":"主宾语被交换 → 本标签；正确识别主宾语但方位 / 距离 / 角度数值错 → `空间关系与方向错误`"},{"kind":"需锚定","r":"正确识别主宾语但方位数值错 → `空间关系与方向错误`；交换了主宾语 → 本标签"}]},{"n":"主体未响应","act":"重命名","from":"主体文本响应","why":"陈述式改缺陷式。","prio":"P0","rubric":{"status":"OK","what":"主要角色 / 物体的外观、数量或属性不符 Prompt。","symptoms":["数量不对（要三只猫给两只）","颜色材质错误","外观特征不符"],"requires":"Prompt 明确描述了主体的外观 / 数量 / 属性"},"rules":[{"kind":"需硬隔离","r":"主体正确但环境背景不符 → `环境未响应`；主体正确但风格跑偏 → `风格错误`"}],"demoKey":"主体未响应"},{"n":"文字生成错误","act":"重命名","from":"文字生成响应","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"画面文字的拼写或语言不正确。","symptoms":["英文单词拼错","要求中文却生成英文","文字内容与 Prompt 不符"],"requires":"文字能看清，问题在语义层——拼写 / 语言对不对"},"rules":[{"kind":"需硬隔离","r":"本标签管语义层（拼写 / 语言正误）；视觉层扭曲模糊 → 画面质量 `画面文字不可读`"},{"kind":"需硬隔离","r":"文字扭曲模糊到看不清 → 画面质量 `画面文字不可读`（视觉层）"},{"kind":"需硬隔离","r":"首帧可读、动起来坏掉 → 动态质量 `文字未保持`"}]},{"n":"否定词未响应","act":"重命名","from":"否定词响应","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"模型忽视了 Prompt 中的否定表述。","symptoms":["「不要有树木」仍生成树木","忽视「没有」「除了」等否定词"],"requires":"Prompt 含明确的否定约束"},"rules":[{"kind":"需硬隔离","r":"并非否定约束、只是主体属性错 → `主体未响应`"}]},{"n":"环境未响应","act":"重命名","from":"环境文本响应","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"背景环境不符 Prompt 设定。","symptoms":["天气不符（要雨天给晴天）","地形错误","室内外装饰不符","时间点错误（要黄昏给正午）"],"requires":"Prompt 明确描述了环境要素"},"rules":[{"kind":"需硬隔离","r":"主体本身不符 → `主体未响应`；整体美学风格跑偏 → `风格错误`"}]},{"n":"风格错误","act":"维持","prio":"P0","rubric":{"status":"OK","what":"视觉美学风格跑偏，不符 Prompt 指定。","symptoms":["要求赛博朋克生成写实摄影","要求水墨风生成 3D 渲染","风格与指令不符"],"requires":"Prompt 明确指定了风格"},"rules":[{"kind":"需硬隔离","r":"本标签管整体风格是否符合指令；镜头间风格突变 → 一致性 `风格不一致`。两者允许共存"},{"kind":"需硬隔离","r":"多镜头之间风格突变（各镜头风格都对但互不一致）→ 一致性 `风格不一致`；两者可同时打"}]},{"n":"空间关系与方向错误","act":"维持","prio":"P1","rubric":{"status":"OK","what":"物体相对位置或运动方向出错。","symptoms":["左右前后上下关系颠倒","要求向左走实际向右","方向指令未遵循"],"requires":"主宾语识别正确，仅方位数值 / 方向错误"},"rules":[{"kind":"需锚定","r":"仅距离 / 角度 / 左右数值错 → 本标签；主宾语被交换 → `响应混淆与指代错误`"},{"kind":"需锚定","r":"交换了主语 / 宾语 → `响应混淆与指代错误`；正确识别主宾语但方位错 → 本标签"}]},{"n":"复杂文本理解错误","act":"重命名","from":"复杂文字理解","why":"陈述式改缺陷式，并降级为兜底标签。","prio":"P1","rubric":{"status":"OK","what":"兜底标签：复杂 Prompt 整体跑偏且无法拆解到具体标签。","symptoms":["多重逻辑长从句整体未理解","抽象比喻完全落空"],"requires":"仅当 Prompt 无法拆解为具体标签、且模型整体跑偏时启用"},"rules":[{"kind":"需降级","r":"仅当 Prompt 无法拆解为具体标签、且模型整体跑偏时启用，不作为常规兜底"},{"kind":"需降级","r":"能归入任何具体标签时一律不打本标签，不作为常规兜底"}]}]},{"name":"多镜头指令遵循","rules":[{"kind":"需互斥","r":"镜头混乱仅限单镜头内无意义突变；镜头时序问题 / 镜头间内容混淆 / 切镜时间点错误仅限镜头间衔接。四者禁止同时打标","for":["镜头混乱","镜头时序问题","镜头间内容混淆","切镜时间点错误"]}],"tags":[{"n":"shot数量遗漏","act":"维持","prio":"P0","rubric":{"status":"OK","what":"实际生成的镜头数少于 Prompt 要求。","symptoms":["要求 3 个镜头只生成 2 个","镜头数量不足"],"requires":"Prompt 明确要求了镜头数量"},"rules":[{"kind":"需硬隔离","r":"完全没有切镜、一镜到底 → `无切镜`；多生成了镜头 → `shot数量新增`"}]},{"n":"shot数量新增","act":"维持","prio":"P1","rubric":{"status":"OK","what":"模型多生成了 Prompt 未要求的镜头。","symptoms":["未要求多镜头却切了镜","超出指定数量"],"requires":"Prompt 未要求或指定了更少的镜头数"},"rules":[{"kind":"需硬隔离","r":"镜头数不足 → `shot数量遗漏`"}]},{"n":"无切镜","act":"维持","prio":"P0","rubric":{"status":"OK","what":"Prompt 要求多镜头叙事，实际输出一镜到底。","symptoms":["要求多镜头但全程单镜头","完全没有镜头切换"],"requires":"一次切镜都没有发生"},"rules":[{"kind":"需硬隔离","r":"有切镜但数量不足 → `shot数量遗漏`"}]},{"n":"切镜时间点错误","act":"维持","prio":"P2","rubric":{"status":"OK","what":"镜头切换的时间点过早或过晚。","symptoms":["要求「3 秒后切换」实际 1 秒就切","切换时机未对齐 Prompt"],"requires":"Prompt 指定了切镜时间点"},"rules":[{"kind":"需互斥","r":"仅限镜头与镜头之间的接续问题，不与 `镜头混乱` 同时打标"},{"kind":"需硬隔离","r":"镜头停留时长与信息量不匹配但 Prompt 未指定时间点 → 动态质量 `剪辑节奏较差`"},{"kind":"需互斥","r":"本标签管镜头之间的接续时机；单镜头内无意义突变 → `镜头混乱`"}]},{"n":"镜头时序问题","act":"维持","prio":"P0","rubric":{"status":"OK","what":"多个镜头的叙事顺序混乱。","symptoms":["先发生的事放在了后面的镜头里","镜头顺序与剧本顺序不符"],"requires":"各镜头内容都对，只是排列顺序错了"},"rules":[{"kind":"需互斥","r":"仅限镜头与镜头之间的接续问题，不与 `镜头混乱` 同时打标"},{"kind":"需互斥","r":"本标签管镜头之间的顺序；单镜头内无意义突变 → `镜头混乱`。两者互斥"},{"kind":"需硬隔离","r":"A 镜头的主体错误出现在 B → `镜头间内容混淆`"}]},{"n":"转场方式错误","act":"维持","prio":"P1","rubric":{"status":"OK","what":"转场手法不符 Prompt 指定。","symptoms":["要求淡入淡出生成硬切","要求瞬间切换生成缓慢溶解"],"requires":"Prompt 明确指定了转场方式"},"rules":[{"kind":"需锚定","r":"单镜头内主体无理由突变 → 动态质量 `转场异变`"}]},{"n":"镜头间内容混淆","act":"维持","prio":"P0","rubric":{"status":"OK","what":"镜头 A 的主体 / 道具错误地出现在镜头 B 中。","symptoms":["跳轴","道具穿帮","前一镜的主体串到后一镜"],"requires":"判定对象是镜头之间的内容串台"},"rules":[{"kind":"需互斥","r":"仅限镜头与镜头之间的接续问题，不与 `镜头混乱` 同时打标"},{"kind":"需锚定","r":"变化由切镜导致且属穿帮 → 本标签；单镜头内无理由突现 → 动态质量 `转场异变`"},{"kind":"需锚定","r":"变化发生在单镜头内且无理由突现 → 动态质量 `转场异变`"},{"kind":"需互斥","r":"本标签管镜头之间；单镜头内无意义突变 → `镜头混乱`"}]},{"n":"尾镜叙事缺失","act":"维持","prio":"P2","rubric":{"status":"OK","what":"最后一个镜头没有完成 Prompt 要求的收尾。","symptoms":["结局动作未出现","叙事戛然而止","尾镜提前结束"],"requires":"仅限最后一个镜头的收尾问题"},"rules":[{"kind":"需硬隔离","r":"整段事件逻辑断裂而非仅尾镜 → 动态质量 `叙事混乱与不完整`"}]},{"n":"镜头混乱","act":"维持","prio":"P0","rubric":{"status":"OK","what":"单镜头内出现无意义突变，整体无法理解。","symptoms":["镜头之间毫无逻辑关联","跳跃性过大无法理解剧情"],"requires":"仅用于单镜头内的无意义突变"},"rules":[{"kind":"需互斥","r":"仅限单镜头内无意义突变；镜头间衔接问题 → `镜头时序问题` / `镜头间内容混淆` / `切镜时间点错误`。四者禁止同时打标"},{"kind":"需互斥","r":"与 `镜头时序问题` / `镜头间内容混淆` / `切镜时间点错误` 四者互斥，禁止同时打标——那三个管镜头与镜头之间的接续"}]}]},{"name":"音频指令遵循","rules":[{"kind":"需硬隔离","r":"本子维度管「有无/类型匹配」，音频评测维度管「质量好不好」，两者互不替代、允许共存"}],"tags":[{"n":"通用指令未遵循","act":"重命名","from":"通用指令","why":"原标签是检查对象而非缺陷，统一加「未遵循」后缀。","prioTBD":true,"rubric":{"status":"OK","what":"整体音频氛围、音量或有无声音不符 Prompt。","symptoms":["要求有声音实际静音","整体氛围与指令不符","音量大小要求未遵循"],"requires":"判定对象是「有没有按指令生成」，不是音质好坏"},"rules":[{"kind":"需硬隔离","r":"本子维度管有无 / 类型匹配；声音质量好坏 → 音频评测维度。两者互不替代、允许共存"},{"kind":"需硬隔离","r":"声音存在且类型对、只是质量差 → 音频评测维度 `噪声感知` / `音量异常` / `音频失真（爆音/断音）`。两者互不替代，允许同时打"}]},{"n":"语音指令未遵循","act":"重命名","from":"语音指令","why":"同上。","prioTBD":true,"rubric":{"status":"OK","what":"人声旁白 / 对话不符 Prompt 要求。","symptoms":["要求旁白实际无人声","语种错误","语速或情绪不符"],"requires":"Prompt 明确要求了语音内容或属性；判定存在性与类型匹配"},"rules":[{"kind":"需硬隔离","r":"本子维度管有无 / 类型匹配；声音质量好坏 → 音频评测维度。两者互不替代、允许共存"},{"kind":"需硬隔离","r":"人声存在但音质差 → 音频评测维度对应标签；口型与声音不同步 → `口型不匹配`"}]},{"n":"音效指令未遵循","act":"重命名","from":"音效指令","why":"同上。","prioTBD":true,"rubric":{"status":"OK","what":"环境音 / 拟音缺失或未在正确节点响起。","symptoms":["要求脚步声实际无","关门声未在关门瞬间响起","雨声爆炸声缺失"],"requires":"Prompt 明确要求了音效；判定存在性与触发节点"},"rules":[{"kind":"需硬隔离","r":"本子维度管有无 / 类型匹配；声音质量好坏 → 音频评测维度。两者互不替代、允许共存"},{"kind":"需硬隔离","r":"音效存在但与画面动作时间点错位 → 音频评测维度 `音画不同步`"}]},{"n":"音乐指令未遵循","act":"重命名","from":"音乐指令","why":"同上。","prioTBD":true,"rubric":{"status":"OK","what":"BGM 的流派、情绪或乐器不匹配 Prompt。","symptoms":["要求钢琴实际吉他","要求欢快实际低沉","流派不符"],"requires":"Prompt 明确要求了音乐属性；判定类型匹配，与音质无关"},"rules":[{"kind":"需硬隔离","r":"本子维度管有无 / 类型匹配；声音质量好坏 → 音频评测维度。两者互不替代、允许共存"},{"kind":"需硬隔离","r":"即使音质极好，只要类型不符指令仍打本标签；音质问题另归音频评测维度"}]}]}]},{"name":"一致性","rules":[],"subs":[{"name":"输入图一致性（I2V）","rules":[],"tags":[{"n":"首帧画风偏离","act":"合并","from":"首帧画风明显偏离 + 首帧画风轻微偏离","why":"明显/轻微作标签区隔导致阈值主观漂移，合并为单一缺陷标签，程度另记。","prio":"P0","rubric":{"status":"OK","what":"生成首帧的画风偏离输入参考图。","symptoms":["输入写实图生成动漫感首帧","笔触质感与参考图不符"],"requires":"I2V 场景；对照物是用户输入的参考图。程度轻重不再用标签区分，另记严重度分数","derived":true},"rules":[{"kind":"需硬隔离","r":"色调偏移为主 → `首帧色偏`；人物身份特征偏离 → `首帧ID偏离`"},{"kind":"需硬隔离","r":"风格不符 Prompt 文本描述 → 指令遵循 `风格错误`；镜头之间风格突变 → `风格不一致`"}]},{"n":"首帧色偏","act":"合并","from":"首帧明显色偏 + 首帧轻微色偏","why":"同上。","prio":"P1","rubric":{"status":"OK","what":"生成首帧的色调偏离输入参考图。","symptoms":["参考图暖调生成冷调","整体色温漂移","饱和度明显不符"],"requires":"I2V 场景；对照物是输入参考图。程度轻重不再用标签区分，另记严重度分数","derived":true},"rules":[{"kind":"需硬隔离","r":"画风整体不符而非仅色调 → `首帧画风偏离`"},{"kind":"需硬隔离","r":"与参考图无关的过曝 / 白平衡问题 → 画面质量 `曝光光影或色彩异常`"}]},{"n":"首帧ID偏离","act":"重命名","from":"首帧ID明显偏离","why":"去掉程度副词，与其余两项对齐。","prio":"P0","rubric":{"status":"OK","what":"生成首帧的人物身份特征偏离输入参考图。","symptoms":["脸型五官与参考图不同","发色发型改变","看起来换了个人"],"requires":"I2V 场景；对照物是输入参考图的主体身份","derived":true},"rules":[{"kind":"需硬隔离","r":"首帧 ID 对但后续镜头漂移 → `主体不一致`"},{"kind":"需硬隔离","r":"偏离的是画风而非身份 → `首帧画风偏离`"}]},{"n":"首帧画风明显偏离","act":"合并","why":"并入「首帧画风偏离」。","gone":true},{"n":"首帧画风轻微偏离","act":"合并","why":"并入「首帧画风偏离」。","gone":true},{"n":"首帧明显色偏","act":"合并","why":"并入「首帧色偏」。","gone":true},{"n":"首帧轻微色偏","act":"合并","why":"并入「首帧色偏」。","gone":true}]},{"name":"多镜头间连贯性（逻辑层）","rules":[{"kind":"需硬隔离","r":"方位不连贯限左右前后朝向，空间位置不连贯限主体间相对坐标/距离，两者不合并","for":["方位不连贯","空间位置不连贯"]},{"kind":"需禁用","r":"若 Prompt 自身叙事碎片化，叙事不连贯禁用（不因剧本混乱惩罚模型）","for":["叙事不连贯"]},{"kind":"需硬隔离","r":"动作或表演不连贯仅管跨镜头动作是否接得上；单镜头内「动作像不像真的」归动态质量","for":["动作或表演不连贯"]}],"tags":[{"n":"动作或表演不连贯","act":"重命名","from":"动作或表演连贯性","why":"陈述式改缺陷式，仅加否定词，语义不动。","prio":"P1","rubric":{"status":"OK","what":"跨镜头的动作或表演衔接断裂。","symptoms":["前一镜跑步后一镜瞬移到终点","动作在切镜处跳跃","表演情绪在镜头间断层"],"requires":"判定对象是镜头之间的动作衔接逻辑","derived":true},"rules":[{"kind":"需硬隔离","r":"仅管跨镜头主体动作是否接得上（镜头 A 到 B）；单镜头内动作像不像真的 → 动态质量 `运动不真实`"},{"kind":"需定优先级","r":"瞬移等违反物理的现象若发生在单镜头内 → 动态质量 `不符合物理规律`；跨镜头衔接断裂 → 本标签"},{"kind":"需硬隔离","r":"同一镜头内运动不平滑 → 动态质量 `卡顿掉帧感`"}]},{"n":"方位不连贯","act":"重命名","from":"方位连贯性","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"主体的朝向 / 方位在镜头之间发生无理由改变。","symptoms":["前一镜面朝左后一镜面朝右","朝向在切镜处翻转"],"requires":"判定对象是主体自身的朝向；与其在场景中的坐标无关","derived":true},"rules":[{"kind":"需硬隔离","r":"本标签仅限左右前后朝向；主体间相对坐标 / 距离 → `空间位置不连贯`。两者不合并"},{"kind":"需硬隔离","r":"主体在场景中的相对坐标改变 → `空间位置不连贯`"},{"kind":"需硬隔离","r":"方向不符 Prompt 指定 → 指令遵循 `空间关系与方向错误`"}]},{"n":"空间位置不连贯","act":"重命名","from":"空间位置连贯性","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"主体在场景中的相对位置在镜头之间跳变。","symptoms":["前一镜在门口后一镜突然在窗边","主体间相对坐标改变"],"requires":"判定对象是主体在场景内的位置关系；与主体自身朝向无关","derived":true},"rules":[{"kind":"需硬隔离","r":"本标签仅限主体间相对坐标 / 距离；左右前后朝向 → `方位不连贯`。两者不合并"},{"kind":"需硬隔离","r":"主体自身朝向改变 → `方位不连贯`"},{"kind":"需硬隔离","r":"位置跳变发生在单镜头内 → 动态质量 `动态时序不一致`"}]},{"n":"叙事不连贯","act":"重命名","from":"叙事连贯性","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"跨镜头的事件因果链断裂。","symptoms":["镜头之间事件无承接关系","因果逻辑跳跃"],"requires":"Prompt 本身有连贯剧本时才判定","derived":true},"rules":[{"kind":"需禁用","r":"若 Prompt 自身叙事碎片化，本标签禁用——不因剧本混乱惩罚模型"},{"kind":"需锚定","r":"Prompt 本身就是碎片化、无因果的剧本，模型如实生成不算缺陷，不打本标签"},{"kind":"需硬隔离","r":"同时涉及事件不完整 / 无收束 → 动态质量 `叙事混乱与不完整`"}]},{"n":"镜头连贯性","act":"删除","why":"与指令遵循·镜头时序问题 / 镜头间内容混淆高度重叠，且与叙事不连贯强耦合。","gone":true}]},{"name":"多镜头间一致性（不变性）","rules":[{"kind":"需硬隔离","r":"风格不一致管镜头间是否突变，指令遵循·风格错误管整体风格是否符合指令，两者允许共存","for":["风格不一致"]}],"tags":[{"n":"场景不一致","act":"重命名","from":"场景一致性","why":"陈述式改缺陷式，仅加否定词，不合并、不改语义。","prio":"P1","rubric":{"status":"OK","what":"同一场景在不同镜头间发生无理由改变。","symptoms":["同一房间的家具布局变了","场景陈设在镜头间改变","地点特征不一致"],"requires":"Prompt 未要求场景变化","derived":true},"rules":[{"kind":"需硬隔离","r":"环境不符 Prompt 设定 → 指令遵循 `环境未响应`"},{"kind":"需硬隔离","r":"主体身份改变 → `主体不一致`"}]},{"n":"主体不一致","act":"重命名","from":"主体一致性","why":"陈述式改缺陷式。","prio":"P0","rubric":{"status":"OK","what":"同一主体的身份特征在镜头间漂移。","symptoms":["切镜后换脸","发色服装改变","同一角色看起来是两个人"],"requires":"跨镜头判定；对照物是该主体在前序镜头中的样子","derived":true},"rules":[{"kind":"需硬隔离","r":"首帧就偏离输入参考图 → `首帧ID偏离`"},{"kind":"需硬隔离","r":"主体属性不符 Prompt → 指令遵循 `主体未响应`；单镜头内主体突变 → 动态质量 `转场异变`"}],"demoKey":"主体一致性"},{"n":"颜色不一致","act":"重命名","from":"颜色一致性","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"画面整体色调在镜头之间跳变。","symptoms":["镜头 A 暖调镜头 B 冷调","同一物体颜色在镜头间改变"],"requires":"Prompt 未要求色调变化","derived":true},"rules":[{"kind":"需硬隔离","r":"色调在单镜头内随时间漂移 → 动态质量 `光影风格时序不一致`"},{"kind":"需硬隔离","r":"单帧的白平衡 / 过曝问题 → 画面质量 `曝光光影或色彩异常`"}]},{"n":"风格不一致","act":"重命名","from":"风格一致性","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"画面美学风格在镜头之间突变。","symptoms":["镜头 A 水墨风镜头 B 赛博朋克","风格在切镜处改变"],"requires":"各镜头自身风格可能都对，问题在互不一致","derived":true},"rules":[{"kind":"需硬隔离","r":"本标签管镜头间是否突变；整体风格是否符合指令 → 指令遵循 `风格错误`。两者允许共存"},{"kind":"需硬隔离","r":"所有镜头风格一致但都不符 Prompt → 指令遵循 `风格错误`。两者可同时打"},{"kind":"需硬隔离","r":"风格在单镜头内逐渐漂移 → 动态质量 `光影风格时序不一致`"}]},{"n":"音乐音效不一致","act":"重命名","from":"音乐音效一致连贯性","why":"陈述式改缺陷式。","prio":"P1","rubric":{"status":"OK","what":"音乐或音效在镜头 / 场景切换时突变。","symptoms":["BGM 在切镜处突然换曲","音效音色突变","从室内切室外混响突然消失"],"requires":"判定对象是音乐 / 音效的跨镜头连贯性","derived":true},"rules":[{"kind":"需硬隔离","r":"音乐类型不符 Prompt → 指令遵循 `音乐指令未遵循`；音质本身有缺陷 → 音频评测维度对应标签"},{"kind":"需硬隔离","r":"人声的连贯性问题 → `人声不一致`"}]},{"n":"人声不一致","act":"重命名","from":"人声一致连贯性","why":"陈述式改缺陷式。","prio":"P0","rubric":{"status":"OK","what":"同一角色的音色在镜头之间改变。","symptoms":["同一角色前后音色不同","像换了配音演员","语调特征在镜头间跳变"],"requires":"判定对象是人声音色的跨镜头一致性","derived":true},"rules":[{"kind":"需硬隔离","r":"语音不符 Prompt 要求 → 指令遵循 `语音指令未遵循`；人声与口型不同步 → `口型不匹配`"},{"kind":"需硬隔离","r":"音乐音效的连贯性问题 → `音乐音效不一致`"}]}]}]},{"name":"音频评测维度","rules":[],"subs":[{"name":"音质（底层物理）","rules":[{"kind":"需硬隔离","r":"凡音频类物理缺陷仅归此维度；动态维度的音频基础质量差已移出并归入此处"}],"tags":[{"n":"噪声感知","act":"维持","prioTBD":true,"rubric":{"status":"OK","what":"音频存在可察觉的底噪。","symptoms":["持续的嘶嘶底噪","电流声","环境噪声本底过高"],"requires":"判定对象是音频的物理质量，与内容是否符合指令无关","derived":true},"rules":[{"kind":"需硬隔离","r":"凡音频类物理缺陷仅归本子维度，不与视觉失真（`波动扭曲` / `明暗闪烁`）混打"},{"kind":"需硬隔离","r":"声音类型 / 有无不符 Prompt → 指令遵循 `通用指令未遵循`。两者互不替代，允许同时打"},{"kind":"需硬隔离","r":"爆音 / 断音 → `音频失真（爆音/断音）`；音量整体过大过小 → `音量异常`"}]},{"n":"音量异常","act":"重命名","from":"音量感知","why":"「感知」不指向缺陷，改为可判定的异常表述。","prioTBD":true,"rubric":{"status":"OK","what":"音频整体音量过大、过小或忽高忽低。","symptoms":["音量过小几乎听不见","音量爆表","音量无理由起伏"],"requires":"判定对象是音量的物理表现","derived":true},"rules":[{"kind":"需硬隔离","r":"Prompt 明确要求了音量大小而未遵循 → 指令遵循 `通用指令未遵循`"},{"kind":"需硬隔离","r":"削波导致的爆音 → `音频失真（爆音/断音）`；切换时的音量突变 → `音乐音效不一致`"}]},{"n":"音频失真（爆音/断音）","act":"重命名","from":"失真感知","why":"明确失真的具体表现，避免与视觉失真类标签混淆。","prioTBD":true,"rubric":{"status":"OK","what":"音频出现削波爆音、断音或码率过低的失真。","symptoms":["爆音削波","突然断音","码率极低的金属感失真"],"requires":"判定对象是波形层面的失真","derived":true},"rules":[{"kind":"需硬隔离","r":"仅底噪偏高 → `噪声感知`；仅音量不当 → `音量异常`"},{"kind":"需硬隔离","r":"视觉上的扭曲闪烁 → 动态质量 `波动扭曲` / `明暗闪烁`（同为「失真」但不同感官）"}]}]},{"name":"音画同步","rules":[{"kind":"需硬隔离","r":"本维度只标质量好坏，指令遵循·音频指令遵循只标有无/类型匹配"}],"tags":[{"n":"口型不匹配","act":"重命名","from":"口型匹配度","why":"去正面词——打标本质是记录缺陷，正面陈述会让标注员犹豫打标方向。","prioTBD":true,"rubric":{"status":"OK","what":"人物口型与语音内容不对应。","symptoms":["说话时嘴没动","口型与音节对不上","闭嘴却有说话声"],"requires":"判定对象是口型与语音的对应关系","derived":true},"rules":[{"kind":"需硬隔离","r":"整体音画时间轴错位而非仅口型 → `音画不同步`"},{"kind":"需硬隔离","r":"人声音色在镜头间改变 → `人声不一致`；语音不符 Prompt → 指令遵循 `语音指令未遵循`"}]},{"n":"音画不同步","act":"移入","from":"动态美学·音画不同步","why":"从动态美学彻底删除，强制归口至此，消除双归属。","prio":"P0","rubric":{"status":"OK","what":"声音与画面动作的时间点错位。","symptoms":["嘴型动了两秒后声音才出","脚步落地声提前","音效与动作不对齐"],"requires":"声音内容是对的，只是时间轴错位","derived":true},"rules":[{"kind":"需硬隔离","r":"声音内容与画面场景完全不符 → `音画不匹配`；仅口型对不上 → `口型不匹配`"},{"kind":"需硬隔离","r":"音效在 Prompt 要求的节点完全没出现 → 指令遵循 `音效指令未遵循`"}],"demoKey":"音画不同步"},{"n":"音画不匹配","act":"移入","from":"动态美学·音画不匹配","why":"原在音画同步与动态美学下同时出现（P1 级硬重复），统一收到此处。","prio":"P0","rubric":{"status":"OK","what":"声音内容与画面场景不符。","symptoms":["室内弹钢琴却有集市喧闹声","画面无雨却有雨声","声源与画面对不上"],"requires":"判定对象是声音内容与画面内容的对应关系，与时间轴无关","derived":true},"rules":[{"kind":"需硬隔离","r":"内容对但时间点错位 → `音画不同步`"},{"kind":"需硬隔离","r":"声音类型不符 Prompt 指定 → 指令遵循 `音效指令未遵循` / `音乐指令未遵循`"}]}]},{"name":"音频质量与表现力","rules":[],"tags":[{"n":"人声语音","act":"删除","why":"是内容类型（Vocal）而非缺陷，无法直接判定好坏，子维度整体删除。","gone":true},{"n":"音效","act":"删除","why":"是内容类型（SFX）而非缺陷，子维度整体删除。","gone":true},{"n":"音乐","act":"删除","why":"是内容类型（BGM）而非缺陷，子维度整体删除。","gone":true}]},{"name":"多模态综合表现力","rules":[],"tags":[{"n":"音频一致性","act":"拆分","why":"子维度整体删除；时间一致性语义归入「音画同步」。","gone":true}]}]}];
+
+// 优先级直接来自数据（人工分级），不再按遍历顺序生成
+const prioOf = name => {
+  for (const d of TAX_AFTER) for (const s of d.subs) for (const t of s.tags)
+    if (t.n === name && !t.gone) return t.prio || null;
+  return null;
+};
+
+const demosFor = t => DEMOS[t.demoKey || t.n] || null;
+
+/* 被父页 srcdoc 内联时的全屏放大握手：状态与常量 */
+// ── 全屏放大：当本图表被父页面以 iframe 内联（srcdoc）时，position:fixed 只能铺满
+//    iframe 自身视口（高仅 ~800px），modal 会被裁。打开 modal 时通知父页面把这个
+//    iframe 放大到全屏，关闭时还原。子页面无法拿到真实 URL，所以不能走「父页加载
+//    popup URL」的老路——只发消息，图表和 modal 都留在原 iframe 里运行。──
+const IN_IFRAME = (window !== window.top);
+let pendingOpen = null;   // 被内联时，等父页 iframe 放大到全屏(kc-expand-ack)后再开 modal
+let revealTimer = null;   // 关闭时，等父页把 iframe 缩回行内尺寸(kc-collapse-ack)后再放出图表
+
+// ── 「这一帧真的上屏了」才回调 ───────────────────────────────────────────────
+// rAF 的回调跑在绘制之「前」，所以在 rAF 里通知父页「我画好了」是错的：父页立刻
+// 显影，而跨进程合成器手上还是子页的上一帧（刚按全屏重排、但还没加 class 的标签树）
+// —— 那就是 flash.png 里那片「清晰的全屏标签树盖在模糊页面上」。
+// 连续两次 rAF 之间必然跨过一个完整的帧边界，即上一帧已提交合成；再挂一个
+// setTimeout 0 兜住「后台标签页 / 隐藏 iframe 里 rAF 根本不跑」的情况。
+function afterPaint(fn){
+  let done = false;
+  const go = () => { if (done) return; done = true; fn(); };
+  requestAnimationFrame(() => requestAnimationFrame(go));
+  setTimeout(go, 120);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// 帧级标注播放器 · 核心
+// ══════════════════════════════════════════════════════════════════════════
+// 视频 + 时间轴打点 + 画面 grounding 框 + 帧级 JSON。两个宿主共用这一份：
+//   · charts/tag-system.html   —— 包在 modal 里，点标签的「Play」打开
+//   · charts/annotation-demo.html —— 直接内联成一张卡片（Pointwise 数据示例）
+// 宿主只需提供同名 DOM 节点（见下方 refs）并调 mountDemos(demos)；
+// 壳的开关/标题/徽章各自实现，核心不关心自己是不是在 modal 里。
+//
+// 组件源自 skills/chart-blocks/templates/frame-annotation-modal。
+
+const overlay = document.getElementById('overlay');   // modal 宿主才有；内联宿主为 null
+const vEl     = document.getElementById('v-el');
+const vWrap   = document.getElementById('v-wrap');
+const vLayer  = document.getElementById('v-layer');
+const vFill   = document.getElementById('v-fill');
+const vTrack  = document.getElementById('v-track');
+const vTime   = document.getElementById('v-time');
+const vPlay   = document.getElementById('v-play');
+const vMute   = document.getElementById('v-mute');
+const vJumps  = document.getElementById('v-jumps');
+const vCtrls  = document.getElementById('v-controls');
+const jBody   = document.getElementById('j-body');
+
+// ── 素材路径：相对「项目根」而不是相对本文档 ─────────────────────────────────
+// demo.src 在 data/tag-system.json 里写成 `assets/videos/x.mp4`，即相对项目根。
+// 这份 HTML 有四种加载方式，各自的 baseURI 不同：
+//   · charts/tag-system.html            直接打开  → base 是 charts/
+//   · eval/charts/tag-system.html       直接打开  → base 是 eval/charts/
+//   · charts/annotation-demo.html       直接打开  → base 是 charts/
+//   · build.py 把上面任一份内联成 srcdoc → base 是父页 index.html（项目根）
+// srcdoc 文档没有自己的 URL（location 是 about:srcdoc），相对路径按父页解析，
+// 所以曾经写死的 `../assets/…` 在博客里会跑到项目根的上一层，视频 404、
+// video.error.code=4（Format error）——表现就是「视频不能播放」。
+// 这里统一把 base 归一到项目根：截到最后一个 / 为止，再剥掉 charts/、eval/。
+//
+// 注意：这段刻意不用正则，全用字符串操作。build.py 会把本文件内联进 index.html
+// 的 markdown，而 SPA 端 renderDoc 会把一行里成对的美元符号当成行内公式抽走再还原，
+// 还原时不解码 &#10; —— 正则里的行尾锚点成对出现就会被吃掉，整段 JS 变成
+// SyntaxError，播放器直接不启动。tools/verify.mjs 有一条检查守着这件事。
+const ASSET_BASE = (() => {
+  const url = document.baseURI.split('#')[0].split('?')[0];
+  let dir = url.slice(0, url.lastIndexOf('/') + 1);
+  if (dir.endsWith('/charts/')) dir = dir.slice(0, -'charts/'.length);
+  if (dir.endsWith('/eval/'))   dir = dir.slice(0, -'eval/'.length);
+  return dir;
+})();
+const srcOf = d => (d.src.indexOf('//') === 0 || d.src.indexOf(':') > -1 || d.src[0] === '/')
+                     ? d.src : ASSET_BASE + d.src;
+
+// 当前这组 demo。核心不查 DEMOS —— 由宿主调 mountDemos(demos) 传入，
+// 所以同一份核心既能被 modal 壳驱动，也能被内联卡片直接挂载。
+let curDemos = [], curIdx = 0, curFrame = -1, pendingSeek = null;
+const curDemo = () => curDemos[curIdx];
+const fmt = s => { if(!isFinite(s)) return '0:00'; const m=Math.floor(s/60), c=Math.floor(s%60); return m+':'+String(c).padStart(2,'0'); };
+const HOLD_DEFAULT = 1.2;
+const holdOf = f => (f.hold != null ? f.hold : HOLD_DEFAULT);
+const sevOf  = f => (f.severity != null ? f.severity : 2);
+
+
+const AUTOSELECT_FIRST = true;   // 打开即定位到第一个问题帧并暂停，首屏就有画面+框
+
+// ── json panel ────────────────────────────────────────────────────────────
+function groundingOf(f){
+  if (f.grounding) return f.grounding;
+  if (f.box) return 'bbox%: ['+f.box.x+','+f.box.y+','+(f.box.x+f.box.w)+','+(f.box.y+f.box.h)+']';
+  return undefined;
+}
+// 面板里吐的 JSON 必须与 data/data.md 里公布的标注协议同构 —— 那份是对外的
+// schema，demo 是它的实例，两边键名对不上就等于给了两套协议。
+// 所以这里只做换名与换算，不新增语义：
+//   frame / frame_range ← time、hold 按 FPS 换算
+//   bbox                ← grounding 的像素坐标，从 [x1,y1,x2,y2] 转成协议规定的 [y1,x1,y2,x2]
+//   observation         ← 帧上已有的客观描述
+//   instruction_expect  ← 协议规定「仅当存在参考素材或生成指令时填写」，demo 没有参考素材，故缺省不出现
+const FPS = 4;                       // 质检抽帧口径：4 fps
+function pxBox(f){                   // "bbox: [x1,y1,x2,y2]" -> [y1,x1,y2,x2]
+  const m = /\[([\d\s,.-]+)\]/.exec(f.grounding || '');
+  if (!m) return undefined;
+  const n = m[1].split(',').map(v => Number(v.trim()));
+  if (n.length !== 4 || n.some(v => !isFinite(v))) return undefined;
+  return [n[1], n[0], n[3], n[2]];
+}
+// 真实数据集里这些字段本来就有（人工画框 / 模型标注都按同一份协议存），
+// 有就直接用，只有旧的手写 demo 才需要从 time/hold 反推。
+function frameObj(f, i){
+  const fr  = f.frame != null ? f.frame
+            : (f.time != null ? Math.round(f.time*FPS) : undefined);
+  const end = (fr!=null) ? fr + Math.max(1, Math.round(holdOf(f)*FPS)) : undefined;
+  return { evidence_id: f.evidence_id || String((i!=null?i:0)+1),
+           frame: fr,
+           bbox: f.bbox || pxBox(f),
+           frame_range: f.frame_range || ((fr!=null && end!=null) ? [fr, end] : undefined),
+           instruction_expect: f.instruction_expect,
+           observation: f.observation || f.reasoning,
+           dimension: f.dimension };
+}
+function jsonHTML(f, i){
+  const obj = frameObj(f, i);
+  const lines = ['<span class="jp">{</span>'];
+  const keys = Object.keys(obj).filter(k => obj[k] !== undefined);
+  keys.forEach((k,i) => {
+    const comma = i < keys.length-1 ? '<span class="jp">,</span>' : '';
+    const v = obj[k];
+    const val = typeof v==='number'
+      ? '<span class="jn">'+v+'</span>'
+      : Array.isArray(v)
+        ? '<span class="jp">[</span><span class="jn">'+v.join('</span><span class="jp">, </span><span class="jn">')+'</span><span class="jp">]</span>'
+        : '<span class="js">"'+String(v).replace(/</g,'&lt;')+'"</span>';
+    lines.push('  <span class="jk">"'+k+'"</span><span class="jp">: </span>'+val+comma);
+  });
+  lines.push('<span class="jp">}</span>');
+  return lines.join('\n');
+}
+// ── timeline markers + jump chips ─────────────────────────────────────────
+const demoDur = d => Math.max(...d.frames.map(f=>f.time)) + 3;
+
+function renderJumps(demo){
+  vJumps.innerHTML = '';
+  demo.frames.forEach((f,i) => {
+    const b = document.createElement('button');
+    b.className = 'jump'; b.dataset.i = i;
+    b.innerHTML = '<span class="jd" data-sev="'+sevOf(f)+'"></span>'+f.time.toFixed(1)+'s · '+f.dimension;
+    b.onclick = () => gotoFrame(i, true);
+    vJumps.appendChild(b);
+  });
+}
+function renderMarks(demo){
+  if (!demo) return;
+  vTrack.querySelectorAll('.mark').forEach(m => m.remove());
+  // duration isn't known until loadedmetadata — place provisionally, redo later
+  const dur = vEl.duration || demoDur(demo);
+  demo.frames.forEach((f,i) => {
+    const m = document.createElement('div');
+    m.className = 'mark'; m.dataset.sev = sevOf(f); m.dataset.i = i;
+    m.style.left = Math.min(99, (f.time/dur)*100) + '%';
+    m.title = f.time.toFixed(1)+'s · '+f.dimension;
+    m.onclick = e => { e.stopPropagation(); gotoFrame(i, true); };
+    vTrack.appendChild(m);
+  });
+  if (curFrame >= 0) markActive(curFrame);
+}
+function markActive(i){
+  document.querySelectorAll('.jump').forEach(j => j.classList.toggle('act', +j.dataset.i === i));
+  document.querySelectorAll('.mark').forEach(m => m.classList.toggle('act', +m.dataset.i === i));
+}
+// ── grounding boxes ───────────────────────────────────────────────────────
+// Size the annotation layer to the video's real content rect. `object-fit:contain` letterboxes
+// the picture inside the wrapper, so box percentages are only meaningful against
+// that inner rect — measuring the wrapper instead offsets every box by the bars.
+function fitAnnotationLayer(){
+  const cw = vWrap.clientWidth, ch = vWrap.clientHeight;
+  const sw = vEl.videoWidth || 16, sh = vEl.videoHeight || 9;
+  if (!cw || !ch) return;                      // modal still display:none — nothing to fit
+  const scale = Math.min(cw/sw, ch/sh);
+  const w = sw*scale, h = sh*scale;
+  vLayer.style.width = w+'px';   vLayer.style.height = h+'px';
+  vLayer.style.left = (cw-w)/2+'px'; vLayer.style.top = (ch-h)/2+'px';
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// A frame's box shows while the playhead is inside [time, time+hold). The selected
+// frame also stays boxed while paused, so clicking a marker always shows the box
+// even when hold has been scrubbed past.
+function activeFrames(){
+  const demo = curDemo(); if (!demo) return [];
+  const t = vEl.currentTime || 0;
+  const set = new Set();
+  demo.frames.forEach((f,i) => { if (t >= f.time && t < f.time + holdOf(f)) set.add(i); });
+  if (vEl.paused && curFrame >= 0) set.add(curFrame);
+  return [...set];
+}
+function renderBoxes(){
+  const demo = curDemo(); if (!demo) return;
+  vLayer.innerHTML = activeFrames().map(i => {
+    const f = demo.frames[i]; if (!f.box) return '';     // no box → degrade to JSON-only
+    const b = f.box;
+    const nearTop = b.y < 8 ? ' near-top' : '';
+    return '<div class="annotation-box'+nearTop+'" data-sev="'+sevOf(f)+'"'
+         + ' style="left:'+b.x+'%;top:'+b.y+'%;width:'+b.w+'%;height:'+b.h+'%">'
+         + '<span>'+esc(f.dimension + (f.target ? ' · '+f.target : ''))+'</span></div>';
+  }).join('');
+}
+// ── navigation ────────────────────────────────────────────────────────────
+function gotoFrame(i, seek){
+  curFrame = i;
+  const f = curDemo().frames[i];
+  if (seek){
+    if (isFinite(vEl.duration)){ vEl.currentTime = f.time; vEl.pause(); }
+    else pendingSeek = f.time;   // metadata not in yet — replay the seek on load
+  }
+  jBody.innerHTML = jsonHTML(f, i);
+  markActive(i);
+  renderBoxes();
+}
+
+function loadDemo(idx){
+  curIdx = idx; curFrame = -1; pendingSeek = null;
+  const demo = curDemo();
+  document.querySelectorAll('.demopill').forEach(p => p.classList.toggle('on', +p.dataset.i === idx));
+  document.getElementById('v-cap').innerHTML = demo.caption || '';
+  jBody.innerHTML = '<span class="jempty">点击进度条上的问题帧标记查看该帧标注。</span>';
+  // fade out before swapping src so the empty/black frame between demos doesn't flash
+  vEl.style.opacity = '0'; vLayer.style.opacity = '0';
+  vLayer.innerHTML = '';
+  vEl.src = srcOf(demo); vEl.load(); vEl.muted = true; vMute.textContent = '🔊';
+  vFill.style.width = '0%';
+  renderJumps(demo);
+  renderMarks(demo);                       // provisional; refined on loadedmetadata
+  if (AUTOSELECT_FIRST && demo.frames.length) gotoFrame(0, true);
+}
+
+
+
+// ── 宿主入口 ──────────────────────────────────────────────────────────────
+// 换一组 demo 并渲染第一条。壳负责在调用前把自己显示出来（modal 加 .on / 内联无操作），
+// 否则 wrapper 尺寸为 0，fitAnnotationLayer 量不到东西。
+function mountDemos(demos){
+  curDemos = demos || [];
+  if (!curDemos.length) return false;
+  const strip = document.getElementById('m-strip');
+  if (strip){
+    strip.innerHTML = '';
+    curDemos.forEach((d, i) => {
+      const p = document.createElement('button');
+      p.className = 'demopill' + (i === 0 ? ' on' : '');
+      p.dataset.i = i; p.textContent = d.label;
+      p.onclick = () => loadDemo(i);
+      strip.appendChild(p);
+    });
+  }
+  loadDemo(0);
+  requestAnimationFrame(fitAnnotationLayer);   // 壳刚显示，布局完成后再量
+  return true;
+}
+
+// ── video wiring ──────────────────────────────────────────────────────────
+vEl.addEventListener('loadedmetadata', () => {
+  renderMarks(curDemo());
+  vTime.textContent = '0:00 / '+fmt(vEl.duration);
+  fitAnnotationLayer();
+  if (pendingSeek != null){ vEl.currentTime = pendingSeek; pendingSeek = null; vEl.pause(); }
+});
+vEl.addEventListener('loadeddata', () => { vEl.style.opacity='1'; vLayer.style.opacity='1'; fitAnnotationLayer(); renderBoxes(); });
+vEl.addEventListener('seeked', renderBoxes);
+vEl.addEventListener('timeupdate', () => {
+  const r = vEl.currentTime / (vEl.duration || 1);
+  vFill.style.width = (r*100)+'%';
+  vTime.textContent = fmt(vEl.currentTime)+' / '+fmt(vEl.duration);
+  renderBoxes();
+});
+vEl.addEventListener('play',  () => { vPlay.textContent='⏸'; vCtrls.classList.add('show'); });
+vEl.addEventListener('pause', () => { vPlay.textContent='▶'; vCtrls.classList.remove('show'); renderBoxes(); });
+vPlay.onclick = () => { vEl.paused ? vEl.play() : vEl.pause(); };
+vEl.onclick   = () => { vEl.paused ? vEl.play() : vEl.pause(); };
+vMute.onclick = () => { vEl.muted = !vEl.muted; vMute.textContent = vEl.muted ? '🔇' : '🔊'; };
+addEventListener('resize', fitAnnotationLayer);
+
+// ── draggable progress ────────────────────────────────────────────────────
+let dragging = false;
+function seekAt(e){
+  const rect = vTrack.getBoundingClientRect();
+  const x = (e.touches ? e.touches[0].clientX : e.clientX);
+  const r = Math.max(0, Math.min(1, (x - rect.left)/rect.width));
+  if (isFinite(vEl.duration)) vEl.currentTime = r * vEl.duration;
+}
+vTrack.addEventListener('mousedown', e => { if(e.target.classList.contains('mark')) return; dragging=true; vCtrls.classList.add('show'); seekAt(e); });
+document.addEventListener('mousemove', e => { if(dragging) seekAt(e); });
+document.addEventListener('mouseup',   () => { if(dragging){ dragging=false; vCtrls.classList.remove('show'); } });
+// ── copy json ─────────────────────────────────────────────────────────────
+document.getElementById('j-copy').onclick = () => {
+  if (curFrame < 0) return;
+  const obj = frameObj(curDemo().frames[curFrame], curFrame);
+  Object.keys(obj).forEach(k => obj[k] === undefined && delete obj[k]);
+  navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).then(() => {
+    const c = document.getElementById('j-copy'); c.classList.add('copied'); c.textContent='✓';
+    setTimeout(() => { c.classList.remove('copied'); c.textContent='⧉'; }, 1600);
+  });
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// 内联播放器启动 —— Pointwise 数据示例（charts/annotation-demo.html）
+// ══════════════════════════════════════════════════════════════════════════
+// 用的是与标签体系完全相同的 modal 组件（html/50-modal.html），只是被
+// 60-inline.css 摊平成静态卡片：没有开关弹窗那一层，页面加载完直接挂 demo。
+// 数据取自 data/tag-system.json 的 demos —— 与标签体系同一份，不再像旧版那样
+// 在 HTML 里另抄一份 3 条子集。
+
+// 展示顺序固定：先崩坏（结构类），再六指（局部结构），再字幕（文字类），
+// 覆盖三种不同的缺陷形态和三段不同素材。DEMOS 的键就是标签名。
+const INLINE_KEYS = ["文字不可读", "崩坏", "生物类结构异常", "主体未响应"];
+
+const inlineDemos = INLINE_KEYS.flatMap(k => (DEMOS[k] || []).map(d => ({
+  ...d,
+  // 内联版没有标题栏可放标签名，把它并进 pill 文案里
+  // An empty label means the tag name says it all (public-set clips had a
+  // redundant "VideoFeedback · <id>" tail); otherwise append the demo's own name.
+  label: d.label ? k + ' · ' + d.label.replace(/^demo-\d+\s*·\s*/, '') : k,
+})));
+
+// modal 的标题栏在这里成了卡片头：填成这份 demo 的说明，而不是某个标签名。
+document.getElementById('m-title').textContent = 'Pointwise 帧级标注';
+document.getElementById('m-path').textContent  = '点击进度条问题帧或时间戳查看该帧 JSON';
+
+if (!mountDemos(inlineDemos)) {
+  document.getElementById('j-body').innerHTML =
+    '<span class="jempty">data/tag-system.json 的 demos 里没有这几个键：'
+    + INLINE_KEYS.join(' / ') + '</span>';
+}
+</script>
+</body>
+</html>
+

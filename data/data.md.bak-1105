@@ -1,0 +1,146 @@
+## Contents
+
+- [Data Distribution](#data-distribution)
+- [Perception Data](#perception-data)
+  - [Pre / Mid Training](#pre-mid-training)
+  - [Human Labeled](#human-labeled)
+- [Aligment Data](#aligment-data)
+
+历史标注数据粒度是视频级结论：一条视频被判为阳性或阴性，标注只给出是否存在问题，不给出问题发生在哪一帧、画面中的哪个位置、为什么被判定为该问题。视频级标注存在的问题：
+- **训练信号缺失**：critic 需要提供监督信号是"哪一帧、哪个位置、为什么"，只给结论的标注提供不了这个信号，无法用于 grounding 与 reasoning 训练。
+- **无法失败归因**：critic 的失败模式无法归因分析，无法针对性补强此部分能力持续优化。
+
+### Data Distribution
+
+omini 参考素材分布：从 ABC 线上真实用户数据回捞多模态 omni 生成数据。视频质检不局限于单参考场景的T2V / I2V 等简单场景。数据分布需要呈现真实用户生产场景的视频生成，因此我们需要构造难度分级的训练数据 & 评测数据，且评测数据横跨不同模态，不同参考素材量级，不同复杂程度的指令等维度。
+
+多难度分布：疑似存在问题的样本需要保留，否则将拉低模型的召回能力。
+
+感知与偏好对齐解耦：
+- **解耦业务与模型**：评测体系可随业务需求动态迭代，VLM 底层感知的原子能力保持稳定建设。
+- **失败模式归因**：模型在某个维度表现差，可回溯到具体原子能力不足，针对性补充预训练 / 中训练数据。
+
+因此质检数据集按训练阶段分为两类：**Perception Data** 驱动模型基础感知能力的 Pre/Mid Training，**Alignment Data** 驱动偏好判别规则的 SFT/RFT。
+
+<table>
+<thead>
+<tr>
+<th>训练阶段</th>
+<th>数据类型</th>
+<th>核心标注字段</th>
+<th>关键注意事项</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td rowspan="3"><strong>Perception</strong><br><small>Pre / Mid Training</small></td>
+<td>正例（命中标签，真实 Badcase）</td>
+<td>维度、帧区间、bbox、严重度、observation、evidence</td>
+<td>允许单条视频标注多个问题；须帧级 grounding</td>
+</tr>
+<tr>
+<td>负例</td>
+<td>无缺陷判断、关键正常证据、不可误判边界</td>
+<td>防止模型只会挑错；正负例比例需合理配比，控制误报</td>
+</tr>
+<tr>
+<td>反事实</td>
+<td>缺陷类型、修改时段与区域、修改前后对照</td>
+<td>单变量修改为原则；避免篡改痕迹（压缩块、颜色断层）成为模型的识别捷径</td>
+</tr>
+<tr>
+<td rowspan="2"><strong>Alignment</strong><br><small>SFT / RFT</small></td>
+<td>Pointwise</td>
+<td>reasoning、severity、label</td>
+<td>依赖 Agentic Critic 上线后的人机协同复核：Critic 召回疑似问题 → 人工复核修正 → 回流难负样本</td>
+</tr>
+<tr>
+<td>Pairwise / Listwise</td>
+<td>glb-rank、glb-reasoning、l2-rank、l2-reasoning</td>
+<td>优先构建难度接近的对组；避免模型只学习明显质量差异，忽略细粒度判别能力</td>
+</tr>
+</tbody>
+</table>
+
+### Perception Data
+
+基础感知数据，本质是将 VLM 的复杂世界知识对齐到视频的像素空间中，从而得到对疑似有问题的视频段进行时空定位。
+
+#### Pre / Mid Training
+评测所需的原子感知能力，指导基础模型的能力补强：
+
+| 质检原子感知能力 | 核心任务 | 主要覆盖的现有评测维度 |
+| :--- | :--- | :--- |
+| 条件与约束理解 | 解析主体、动作、属性、空间关系、运镜、时序、音频及参考条件 | 指令遵循、人图一致性、音频一致性 |
+| 静态视觉质量感知 | 识别曝光、清晰度、伪影、边缘、纹理、材质、文字和局部结构异常 | 画面基础质量、清晰度、部分结构崩坏 |
+| 对象身份与属性追踪 | 跨帧、跨镜头绑定主体，判断身份、数量、颜色、服饰和场景变化 | 主体一致性、场景一致性、颜色与风格一致性 |
+| 运动与时序稳定性感知 | 识别跳变、抖动、闪烁、扭曲、卡顿、异常静止和速度异常 | 动态基础质量、动态幅度 |
+| 空间、交互与物理判断 | 判断位置、方向、遮挡、接触、支撑、轨迹、结构和现实常识 | 合理性、主体交互、运动真实性、空间关系 |
+| 动作、事件与多镜头理解 | 识别动作阶段、事件顺序、镜头结构及跨镜头叙事 | 动作响应、多镜头遵循、叙事完整性与连贯性 |
+| 音频与跨模态理解 | 识别语音、音乐、音效、音质及音画同步和匹配 | 音频质量、音频遵循、音画叙事 |
+| 审美与专家偏好判断 | 判断构图、光影、服化、表演、节奏、创意和整体表现力 | 画面美学、动态美学、视听叙事 |
+| 证据化质检推理 | 定位对象、时间和区域，给出证据、理由、置信度和不可判定判断 | 所有评测维度的质检输出 |
+
+
+#### Human Labeled
+感知数据的标注规范清晰，对于模型基础能力缺失部分，依赖于人标。
+标注规范：每条视频质检数据，需要以帧级别标注其存在的所有质检标签。以下是单条视频质检数据 Demo：
+
+<div align="center">
+  <iframe src="../charts/annotation-demo.html" style="width:100%;height:600px;border:1px solid #e4e7ec;border-radius:12px;" title="统一标注数据格式 · Pointwise Demo"></iframe>
+</div>
+
+```json
+{
+  "evidence_id": "1",
+  "frame": 7,
+  "bbox": [y1, x1, y2, x2],
+  "frame_range": [4, 10],
+  "instruction_expect": "参考或指令在本帧所要求的文字, 仅当存在参考素材或生成指令时填写",
+  "observation": "一句客观描述: 什么载体上的文字, 位置大小如何, 出现了什么现象",
+  "dimension": "命中的三级标签"
+}
+```
+
+##### 标注平台
+
+这批数据产自 critic-studio 的双人盲标平台。下面是平台的 demo：左侧切换角色，中间是帧级证据框与采纳 / 驳回 / 轻微三种标注动作，右侧实时算出该条视频的终态与质检指标。
+
+切到「标注员 A」会看到盲标状态——看不到另一名标注员，也看不到终态；切到「复核员」才会显示两人的结论。三条样本分别走通了三条终态路径：两人一致、两人分歧交复核、评测员推翻复核。
+
+<div align="center">
+  <iframe src="../label-platform/demo.html" style="width:100%;height:700px;border:1px solid #e4e7ec;border-radius:12px;" title="标注平台 · 双人盲标 Demo"></iframe>
+</div>
+
+##### 标注规则
+
+角色与账号隔离、视频级与证据级的终态优先级、什么情况不交付，以及两项质检指标的口径：
+
+<div align="center">
+  <iframe src="../label-platform/rules.html" style="width:100%;height:620px;border:1px solid #e4e7ec;border-radius:12px;" title="标注规则 · 双人盲标"></iframe>
+</div>
+
+### Aligment Data
+
+偏好对齐，本质是将评测人员的标注偏好进行蒸馏，沉淀成一套可执行的判别规则。
+- 依赖于下文 Agentic Critic 评测提效系统的上线，前期通过人机协同的方式（质检平台召回疑似有问题的证据，评测人员复核修正机评的判别），持续回流真实线上数据 & 难负样本。
+
+**Pointwise**
+```json
+{
+  "reasoning": "参考图同位置横幅标语本就不可读, 生成与其一致, 依规则一判否",
+   "severity": 0,
+   "label": 0
+}
+```
+
+**Pairwise / Listwise**
+```json
+{
+  "glb-rank": "",
+  "glb-reasoning": "",
+  "l2-reasoning": "",
+  "l2-rank": [0, 1, 2, 3],
+}
+```
+

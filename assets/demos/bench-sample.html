@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Benchmark sample</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --ink:#111418; --soft:#5b636e; --dim:#9aa1ab;
+    --line:#e4e7ec; --band:#f0f2f5; --brand:#2f6bff; --warn:#c2410c; --ok:#1f9254;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#131317; --card:#1b1b21; --ink:#f1f1f3; --soft:#a8a8b2; --dim:#71717c;
+    --line:#2b2b33; --band:#22222a; --brand:#6f9dff; --warn:#fb923c; --ok:#4ade80;}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font-family:var(--sans);color:var(--ink);
+       line-height:1.6;font-size:13.5px;padding:2px;-webkit-font-smoothing:antialiased}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+
+  .top{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--line);
+       background:var(--band);flex-wrap:wrap}
+  .chip{font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+        font-weight:600;color:var(--brand);border:1px solid var(--line);border-radius:999px;padding:2px 9px}
+  .top .src{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+
+  .body{display:grid;grid-template-columns:250px 1fr;gap:20px;padding:16px}
+  .body.wide{grid-template-columns:340px 1fr}
+  @media(max-width:640px){.body{grid-template-columns:1fr}}
+  video{width:100%;border-radius:8px;background:#000;display:block}
+  .novid{width:100%;aspect-ratio:16/10;border:1px dashed var(--line);border-radius:8px;
+         display:flex;align-items:center;justify-content:center;text-align:center;
+         padding:16px;color:var(--dim);font-size:11.5px;line-height:1.6;background:var(--band)}
+
+  dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:11px 18px;align-items:baseline}
+  dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+  dd{margin:0;font-size:14.5px;color:var(--ink)}
+  dd.ans{font-weight:640}
+  dd .t{font-family:var(--mono);font-size:13px;color:var(--brand);font-weight:600}
+  dd .sub{display:block;font-size:11.5px;color:var(--dim);margin-top:3px;line-height:1.65}
+
+  /* 维度评分条 */
+  .dims{margin:14px 16px 0;display:grid;gap:6px}
+  .dimrow{display:grid;grid-template-columns:150px 1fr 40px;gap:10px;align-items:center;font-size:12.5px}
+  .dimrow .nm{color:var(--soft)}
+  .bar{height:9px;background:var(--band);border-radius:5px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--brand);border-radius:5px}
+  .bar i.low{background:var(--warn)}
+  .dimrow .v{font-family:var(--mono);font-size:12px;text-align:right;color:var(--ink);font-weight:600}
+
+  table{border-collapse:collapse;width:calc(100% - 32px);margin:14px 16px 0;font-size:12.5px}
+  th,td{border-bottom:1px solid var(--line);padding:6px 9px;text-align:left}
+  th{color:var(--dim);font-weight:600;font-size:11px;letter-spacing:.04em;background:var(--band)}
+  td.n{font-family:var(--mono);text-align:right}
+  tr.hi td{color:var(--warn);font-weight:600}
+  .foot{padding:10px 16px;border-top:1px solid var(--line);background:var(--band);
+        font-size:11.5px;color:var(--dim);margin-top:14px}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .pair .plab{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-bottom:4px;
+      letter-spacing:.06em;text-transform:uppercase}
+  .miss{padding:26px 18px;color:var(--dim)}
+
+  /* 同一个 benchmark 的多条样本，用标签页切换 */
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--line);background:var(--band);
+        padding:0 10px;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{flex:0 0 auto;background:none;border:none;border-bottom:2px solid transparent;
+        color:var(--soft);font-family:var(--sans);font-size:12.5px;padding:8px 12px;cursor:pointer;
+        white-space:nowrap;margin-bottom:-1px}
+  .tabs button:hover{color:var(--ink)}
+  .tabs button[aria-selected="true"]{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+</style>
+</head>
+<body>
+<div class="card" id="card"></div>
+<script src="./bench-sample-data.js"></script>
+<script>
+// 视频生成评测 benchmark 的数据卡，按 URL hash 选（#vbench、#videophy、#videofeedback）。
+// 展示三件事：这个 benchmark 拿什么当输入、真值长什么样、它把质量拆成了哪几维。
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+// 一个 benchmark 可以挂多条样本（d.samples）。挂一条时不显示标签页。
+function render(entry, idx){
+  const card = document.getElementById('card');
+  if (!entry){ card.innerHTML = '<div class="miss">未找到该样本，URL 需带 hash。</div>'; return; }
+  const list = entry.samples || [entry];
+  const i = Math.min(idx || 0, list.length - 1);
+  const d = Object.assign({}, entry, list[i]);   // 顶层 bench/src 作为默认，样本可覆盖
+  delete d.samples;
+
+  const tabs = list.length > 1
+    ? `<div class="tabs" role="tablist">${list.map((x, k) =>
+        `<button role="tab" aria-selected="${k===i}" data-i="${k}">${esc(x.tab || ('样本 '+(k+1)))}</button>`
+       ).join('')}</div>`
+    : '';
+
+  // 三种媒体形态：单视频 / 两个视频并排对比 / 无视频只给说明
+  const media = d.pair
+    ? `<div class="pair">${d.pair.map(v=>
+        `<div><div class="plab">${esc(v.label)}</div>`
+        + `<video src="../clips/${v.clip}" controls muted loop playsinline preload="metadata"></video></div>`
+       ).join('')}</div>`
+    : d.clip
+    ? `<video src="../clips/${d.clip}" controls muted loop playsinline preload="metadata"></video>`
+    : `<div class="novid">${d.novid}</div>`;
+
+  const dims = d.dims ? `<div class="dims">${d.dims.map(x=>{
+      const pct = x.v / (x.max || 4) * 100;
+      return `<div class="dimrow"><span class="nm">${esc(x.k)}</span>`
+           + `<span class="bar"><i class="${x.v <= (x.max||4)/2 ? 'low':''}" style="width:${pct}%"></i></span>`
+           + `<span class="v">${x.v}</span></div>`;
+    }).join('')}</div>` : '';
+
+  const tbl = d.rows ? `<table><thead><tr>${d.rows[0].map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>`
+    + `<tbody>${d.rows.slice(1).map(r=>
+        `<tr class="${r[r.length-1]==='hi'?'hi':''}">${r.filter(c=>c!=='hi').map((c,i)=>
+          `<td class="${i?'n':''}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>` : '';
+
+  card.innerHTML = `
+    <div class="top"><span class="chip">${esc(d.bench)}</span><span class="src">${esc(d.src)}</span></div>
+    ${tabs}
+    <div class="body${d.pair ? " wide" : ""}">
+      <div>${media}</div>
+      <dl>
+        <dt>输入</dt><dd>${d.q}</dd>
+        <dt>真值</dt><dd class="ans">${d.a}</dd>
+        ${d.cat ? `<dt>形态</dt><dd>${d.cat}</dd>` : ''}
+      </dl>
+    </div>
+    ${dims}${tbl}
+    ${d.note ? `<div class="foot">${d.note}</div>` : ''}`;
+
+  card.querySelectorAll('.tabs button').forEach(b =>
+    b.addEventListener('click', () => render(entry, +b.dataset.i)));
+
+  requestAnimationFrame(()=>parent.postMessage(
+    {type:'kc-height', h:Math.ceil(card.getBoundingClientRect().height)+8}, '*'));
+}
+const pick = () => render(DEMOS[decodeURIComponent(location.hash.slice(1))], 0);
+addEventListener('hashchange', pick);
+addEventListener('resize', pick);
+pick();
+</script>
+</body>
+</html>
+

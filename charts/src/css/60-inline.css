@@ -1,0 +1,26 @@
+/* 内联播放器宿主：把「标签体系里点 ▷ Play 弹出的那个 modal」原样摊平成页面里的
+   一张静态卡片（Pointwise 数据示例用）。
+
+   关键点：DOM 与样式都不另起一套 —— 内联版直接复用 html/50-modal.html 的 modal
+   本体和 45-player.css / 50-modal.css 的全部样式，这里只做三件事：
+     ① 解除 .overlay 的 fixed 定位，让它退化成普通文档流容器；
+     ② 去掉弹窗特征（大投影、92vh 限高、圆角裁切保留）；
+     ③ 隐藏只在弹窗里有意义的红黄绿灯（这里没有「关闭」这回事）。
+   旧版这里是一套深色 .card/.head 外壳 + 逐条覆盖播放器颜色，等于把同一个组件
+   维护了两遍（浅色一份、深色一份），两边样式已经开始漂移 —— 那正是要消掉的重复。 */
+.inline-player{background:#f0f2f5;padding:18px}
+/* overlay 退化：不再 fixed 铺满、不再变暗模糊，就是个居中的块 */
+.inline-player .overlay{position:static;inset:auto;display:block;background:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none;padding:0;z-index:auto}
+.inline-player .modal{margin:0 auto;max-height:none;
+  box-shadow:0 1px 3px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.08)}
+/* 红黄绿灯是弹窗语义（关闭/最小化/最大化），静态卡片里没有对应动作 */
+.inline-player .traflights{display:none}
+/* 摊平后卡片高度由内容决定，副标题（原 modal 的面包屑）推到行尾更像页面标题栏 */
+.inline-player .mhead .mp{margin-left:auto}
+/* JSON 列：弹窗里是 92vh 高的固定框，摊平后没有那个高度约束，
+   jcard 用 align-self:flex-start 就只包住文字，右侧留一大片空白。
+   这里让它撑满整列，与左侧视频列齐高。 */
+.inline-player .jcard{align-self:stretch}
+.inline-player .jhint{max-width:1240px;margin:12px auto 0;font-size:11.5px;color:#6b7787;line-height:1.6}
+

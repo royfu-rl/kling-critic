@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+"""ABC-Critic 质检 workflow 图：一份布局，同时产出可编辑的 .drawio 和静态 .svg。
+
+    python3 tools/make_workflow.py
+
+- `assets/figures/critic-workflow.drawio`  draw.io 源文件，页面里可直接改
+- `assets/figures/critic-workflow.svg`     静态图，编辑器连不上时的兜底，也能单独看
+
+两份都从下面的 NODES / EDGES 生成，所以不会出现「改了图忘了改兜底」。
+改完跑一次本脚本，再跑 `python3 tools/make_drawio_embed.py critic-workflow "ABC-Critic Workflow"`。
+"""
+import html
+import os
+import xml.etree.ElementTree as ET
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FIG = os.path.join(ROOT, 'assets', 'figures')
+
+INK, MUTE, LINE, BRAND = '#111418', '#5b636e', '#c7ccd4', '#2f6bff'
+FAINT = '#8a929e'
+
+# kind: stage 主干 | plain 普通框 | dark 终点 | ghost 虚线备选 | note 小标签 | chip 细分项
+# (id, x, y, w, h, title, sub, kind)
+NODES = [
+    ('input', 70, 150, 170, 86, 'Input', '生成视频 + Caption Prompt\n参考图 / 音轨', 'plain'),
+    ('s1', 300, 150, 210, 86, '1 · Preprocess', 'Prompt 结构化为可验证约束\nCV tool 预处理出结构化信息', 'stage'),
+    ('s2', 570, 150, 230, 86, '2 · Recall', 'VLM 结合结构化信息做时空定位\n召回疑似问题片段 + 推理解释', 'stage'),
+    ('s3', 860, 150, 200, 86, '3 · Postprocess', '对召回证据做后处理\nCV tool 提取增强信息', 'stage'),
+    ('s4', 1120, 150, 200, 86, '4 · Verifier', '逐条复核校验证据\n采纳 / 驳回 + 严重度', 'stage'),
+    ('s5', 1380, 150, 200, 86, '5 · Aggregate', 'Rubric 聚合，给出结论\n分数 / status / 证据图', 'dark'),
+
+    ('moeR', 570, 450, 230, 74, 'MoE Recall', '把一个大问题拆给多个召回专家', 'ghost'),
+    ('moeV', 1105, 450, 230, 74, 'MoE Verifier', '按缺陷类型拆给多个复核专家', 'ghost'),
+
+    ('split', 1130, 568, 90, 34, '崩坏', '', 'chip'),
+    ('hum', 1290, 536, 104, 32, '人体崩坏', '', 'chip'),
+    ('bio', 1290, 584, 104, 32, '生物崩坏', '', 'chip'),
+    ('obj', 1290, 632, 104, 32, '非生物崩坏', '', 'chip'),
+]
+
+# 主干下方的一行小字
+CAPTIONS = [
+    (405, 253, 'CV tools：抽帧 · OCR · 检测 · 光流 · 深度'),
+    (685, 253, 'Perception · 召回优先'),
+    (960, 253, 'CV tools：裁剪放大 · 分割 · 追踪'),
+    (1220, 253, 'Human Alignment · 精度优先'),
+    (1175, 625, '按缺陷类型细分的一个例子'),
+]
+SIDE_LABELS = [(1406, 556, '躯干 · 手部'), (1406, 652, '刚性物体 · 柔性物体')]
+
+NOTES = [  # (x, y, w, h, text, fill, stroke, color)
+    (820, 474, 132, 26, '代价：成本上升', '#fff4ed', '#e8a87c', '#9a5b2a'),
+    (1355, 474, 170, 26, '不增加成本，准召双升', '#edf7f0', '#7cc49a', '#2b6b45'),
+]
+
+# (src, dst, style) — style: main 主干 | thin 入口 | ghost 虚线 | hair 细分连线
+EDGES = [
+    ('input', 's1', 'thin'), ('s1', 's2', 'main'), ('s2', 's3', 'main'),
+    ('s3', 's4', 'main'), ('s4', 's5', 'main'),
+    ('s2', 'moeR', 'ghost'), ('s4', 'moeV', 'ghost'),
+    ('moeV', 'split', 'hair'),
+    ('split', 'hum', 'hair'), ('split', 'bio', 'hair'), ('split', 'obj', 'hair'),
+]
+
+LANES = [
+    (40, 60, 1620, 280, '主干：五个阶段，左到右', False),
+    (40, 400, 1620, 300, '备选增强：尚未确定是否采用', True),
+]
+
+BY_ID = {n[0]: n for n in NODES}
+
+
+# ---------------------------------------------------------------- drawio
+
+DRAWIO_STYLE = {
+    'plain': 'fillColor=#ffffff;strokeColor=#c7ccd4',
+    'stage': 'fillColor=#eef3ff;strokeColor=#2f6bff;strokeWidth=1.5',
+    'dark':  'fillColor=#111418;strokeColor=#111418;fontColor=#ffffff',
+    'ghost': 'fillColor=#ffffff;strokeColor=#2f6bff;dashed=1;dashPattern=8 5',
+    'chip':  'fillColor=#ffffff;strokeColor=#c7ccd4;dashed=1;dashPattern=8 5',
+}
+DRAWIO_EDGE = {
+    'main':  'strokeColor=#2f6bff;strokeWidth=1.8;endArrow=blockThin;endFill=1',
+    'thin':  'strokeColor=#9aa2ad;strokeWidth=1.5;endArrow=blockThin;endFill=1',
+    'ghost': 'strokeColor=#2f6bff;strokeWidth=1.4;dashed=1;dashPattern=6 4;endArrow=blockThin;endFill=1',
+    'hair':  'strokeColor=#c7ccd4;strokeWidth=1.2;dashed=1;dashPattern=6 4;endArrow=none',
+}
+
+
+def drawio() -> str:
+    out = ['<mxfile host="app.diagrams.net" type="device">',
+           '  <diagram name="ABC-Critic Workflow" id="critic-workflow">',
+           '    <mxGraphModel dx="1640" dy="900" grid="0" gridSize="10" guides="1" tooltips="1" '
+           'connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="860" '
+           'math="0" shadow="0">', '      <root>',
+           '        <mxCell id="0" />', '        <mxCell id="1" parent="0" />']
+
+    for i, (x, y, w, h, label, dashed) in enumerate(LANES):
+        style = ('rounded=1;arcSize=6;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#%s;'
+                 'dashed=%d;dashPattern=8 6;verticalAlign=top;align=left;spacingLeft=14;spacingTop=8;'
+                 'fontSize=12;fontColor=#8a929e;fontStyle=1' % ('c7ccd4' if dashed else 'e4e7ec', dashed))
+        out.append(f'        <mxCell id="lane{i}" value="{html.escape(label)}" style="{style}" vertex="1" parent="1">')
+        out.append(f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry" />')
+        out.append('        </mxCell>')
+
+    for nid, x, y, w, h, title, sub, kind in NODES:
+        body = f'&lt;b&gt;{html.escape(title)}&lt;/b&gt;'
+        if sub:
+            lines = '&lt;br&gt;'.join(html.escape(s) for s in sub.split('\n'))
+            body += f'&lt;br&gt;&lt;font color=&quot;#5b636e&quot;&gt;{lines}&lt;/font&gt;'
+        fs = 12 if kind == 'chip' else 13
+        style = (f'rounded=1;arcSize=14;whiteSpace=wrap;html=1;{DRAWIO_STYLE[kind]};'
+                 f'fontSize={fs};align=center;verticalAlign=middle;spacing=6')
+        if kind != 'dark':
+            style += ';fontColor=#111418'
+        out.append(f'        <mxCell id="{nid}" value="{body}" style="{style}" vertex="1" parent="1">')
+        out.append(f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry" />')
+        out.append('        </mxCell>')
+
+    for x, y, w, h, text, fill, stroke, color in NOTES:
+        style = (f'rounded=1;arcSize=40;whiteSpace=wrap;html=1;fillColor={fill};strokeColor={stroke};'
+                 f'fontSize=11;fontColor={color};align=center;verticalAlign=middle')
+        out.append(f'        <mxCell id="note{x}" value="{html.escape(text)}" style="{style}" vertex="1" parent="1">')
+        out.append(f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry" />')
+        out.append('        </mxCell>')
+
+    for cx, cy, text in CAPTIONS + [(x + 90, y, t) for x, y, t in SIDE_LABELS]:
+        style = 'text;html=1;align=center;verticalAlign=middle;fontSize=11;fontColor=#8a929e'
+        out.append(f'        <mxCell id="cap{cx}_{cy}" value="{html.escape(text)}" style="{style}" vertex="1" parent="1">')
+        out.append(f'          <mxGeometry x="{cx - 120}" y="{cy - 10}" width="240" height="20" as="geometry" />')
+        out.append('        </mxCell>')
+
+    for i, (src, dst, kind) in enumerate(EDGES):
+        vertical = kind == 'ghost'
+        ports = ('exitX=0.5;exitY=1;entryX=0.5;entryY=0' if vertical else 'exitX=1;exitY=0.5;entryX=0;entryY=0.5')
+        if (src, dst) == ('moeV', 'split'):
+            ports = 'exitX=0.5;exitY=1;entryX=0.5;entryY=0'
+        style = f'edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;{DRAWIO_EDGE[kind]};{ports}'
+        out.append(f'        <mxCell id="e{i}" style="{style}" edge="1" parent="1" source="{src}" target="{dst}">')
+        out.append('          <mxGeometry relative="1" as="geometry" />')
+        out.append('        </mxCell>')
+
+    out += ['      </root>', '    </mxGraphModel>', '  </diagram>', '</mxfile>', '']
+    return '\n'.join(out)
+
+
+# ---------------------------------------------------------------- svg
+
+SVG_FILL = {'plain': '#ffffff', 'stage': '#eef3ff', 'dark': INK, 'ghost': '#ffffff', 'chip': '#ffffff'}
+SVG_STROKE = {'plain': LINE, 'stage': BRAND, 'dark': INK, 'ghost': BRAND, 'chip': LINE}
+
+
+def svg() -> str:
+    W, H = 1700, 780
+    p = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="100%" '
+         f'font-family="-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Microsoft YaHei,sans-serif">',
+         f'<rect width="{W}" height="{H}" fill="#ffffff"/>',
+         '<defs>',
+         f'<marker id="a-main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="{BRAND}"/></marker>',
+         '<marker id="a-thin" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1L9 5L0 9z" fill="#9aa2ad"/></marker>',
+         '</defs>']
+
+    for x, y, w, h, label, dashed in LANES:
+        dash = ' stroke-dasharray="8 6"' if dashed else ''
+        p.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" fill="none" '
+                 f'stroke="{LINE if dashed else "#e4e7ec"}"{dash}/>')
+        p.append(f'<text x="{x + 16}" y="{y + 22}" font-size="12" font-weight="700" fill="{FAINT}">{html.escape(label)}</text>')
+
+    def edge(x1, y1, x2, y2, kind):
+        st = {'main': (BRAND, 1.8, '', 'url(#a-main)'), 'thin': ('#9aa2ad', 1.5, '', 'url(#a-thin)'),
+              'ghost': (BRAND, 1.4, ' stroke-dasharray="6 4"', 'url(#a-main)'),
+              'hair': (LINE, 1.2, ' stroke-dasharray="6 4"', 'none')}[kind]
+        color, width, dash, marker = st
+        mk = f' marker-end="{marker}"' if marker != 'none' else ''
+        if abs(y1 - y2) < 1:
+            d = f'M{x1} {y1} L{x2 - 3} {y2}'
+        else:
+            mid = (x1 + x2) / 2 if abs(x1 - x2) > 1 else x1
+            d = (f'M{x1} {y1} V{(y1 + y2) / 2} H{x2} V{y2 - 3}' if abs(x1 - x2) > 1
+                 else f'M{x1} {y1} V{y2 - 3}')
+            if abs(x1 - x2) > 1 and abs(y1 - y2) > 1 and kind == 'hair':
+                d = f'M{x1} {y1} H{mid} V{y2} H{x2}'
+        p.append(f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{width}"{dash}{mk}/>')
+
+    for src, dst, kind in EDGES:
+        a, b = BY_ID[src], BY_ID[dst]
+        ax, ay, aw, ah = a[1], a[2], a[3], a[4]
+        bx, by, bw, bh = b[1], b[2], b[3], b[4]
+        if kind == 'ghost':
+            edge(ax + aw / 2, ay + ah, bx + bw / 2, by, kind)
+        elif (src, dst) == ('moeV', 'split'):
+            edge(ax + aw / 2, ay + ah, bx + bw / 2, by, kind)
+        else:
+            edge(ax + aw, ay + ah / 2, bx, by + bh / 2, kind)
+
+    for nid, x, y, w, h, title, sub, kind in NODES:
+        dash = ' stroke-dasharray="8 5"' if kind in ('ghost', 'chip') else ''
+        sw = 1.5 if kind == 'stage' else 1
+        p.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="12" fill="{SVG_FILL[kind]}" '
+                 f'stroke="{SVG_STROKE[kind]}" stroke-width="{sw}"{dash}/>')
+        tc = '#ffffff' if kind == 'dark' else INK
+        lines = [s for s in sub.split('\n') if s] if sub else []
+        total = 1 + len(lines)
+        start = y + h / 2 - (total - 1) * 8 + 4
+        fs = 12 if kind == 'chip' else 13
+        p.append(f'<text x="{x + w / 2}" y="{start}" text-anchor="middle" font-size="{fs}" '
+                 f'font-weight="700" fill="{tc}">{html.escape(title)}</text>')
+        for i, line in enumerate(lines):
+            p.append(f'<text x="{x + w / 2}" y="{start + 17 * (i + 1)}" text-anchor="middle" '
+                     f'font-size="11.5" fill="{MUTE if kind != "dark" else "#c8ccd3"}">{html.escape(line)}</text>')
+
+    for x, y, w, h, text, fill, stroke, color in NOTES:
+        p.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="13" fill="{fill}" stroke="{stroke}"/>')
+        p.append(f'<text x="{x + w / 2}" y="{y + h / 2 + 4}" text-anchor="middle" font-size="11" fill="{color}">{html.escape(text)}</text>')
+
+    for cx, cy, text in CAPTIONS:
+        p.append(f'<text x="{cx}" y="{cy}" text-anchor="middle" font-size="11" fill="{FAINT}">{html.escape(text)}</text>')
+    for x, y, text in SIDE_LABELS:
+        p.append(f'<text x="{x}" y="{y}" font-size="11" fill="{FAINT}">{html.escape(text)}</text>')
+
+    p.append('</svg>')
+    return '\n'.join(p)
+
+
+if __name__ == '__main__':
+    os.makedirs(FIG, exist_ok=True)
+    for name, text in [('critic-workflow.drawio', drawio()), ('critic-workflow.svg', svg())]:
+        path = os.path.join(FIG, name)
+        open(path, 'w', encoding='utf-8').write(text)
+        print(f'{path}  {len(text) / 1024:.1f} KB')
+    ET.fromstring(drawio())   # 自检：drawio 必须是合法 XML
+    print('drawio XML parses')
+

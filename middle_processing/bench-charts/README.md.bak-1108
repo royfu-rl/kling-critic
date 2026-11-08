@@ -1,0 +1,128 @@
+# ABC-Critic Blog
+
+单页 SPA，`index.html` 是构建产物，双击即可打开（也可 `bash serve.sh` 起本地服务）。
+
+## 目录
+
+```
+overview.md            五个页签的正文，每个 md 对应一个页签
+eval/eval.md           ↑ 页签顺序与内容由 build.py 的 DOCS_SPEC 决定
+data/data.md
+harness/harness.md
+training/training.md
+
+charts/                自研交互图表（页面内联成 srcdoc，不发额外请求）
+  src/                 ↑ 图表的真正源码：css/ html/ js/ 分片
+  tag-system.html      标签体系树（生成产物，勿手改）
+  annotation-demo.html 帧级标注 demo（生成产物，勿手改）
+  milestone.html       建设路线
+  doc-preview.html     文档预览壳，用 data-src/data-name 指定目标
+data/tag-system.json   标签体系 + demo 的唯一数据源，改这里而不是改图表 html
+
+label-platform/        标注平台相关的内嵌页（生成产物 + 手写文档）
+  studio/              critic-studio 盲标页的静态副本，data.md 内嵌的就是它（见下文）
+  demo.html            旧版重写 demo，已不再内嵌；由 tools/make_label_demo.py 生成
+  kim-rules/           Kim 文档「标注平台使用示范」的本地副本，data.md「标注规则」内嵌的就是它
+                       document.md + media/ + meta.json 是导出源，index.html 由 tools/make_kim_rules.py 生成
+  rules.html           旧版手写规则，已不再内嵌
+
+surveys/               页面内嵌引用的调研原文，已复制进来，不依赖外部目录
+assets/                全部静态素材，见下
+  figures/critic-workflow.{drawio,svg,html,jpg}   质检 workflow 图，全部由脚本生成
+tools/gen-chart.mjs    charts/src/** + tag-system.json -> charts/*.html
+tools/verify.mjs       数据不变量自检
+tools/workflow_kit.py            draw.io 图元库（panel / card / chip / legend）
+tools/make_workflow_variants.py  10 个候选版式 -> middle_processing/workflow-variants/
+tools/render_variants.py         候选 .drawio -> .png（本地渲染）
+tools/build_variant_gallery.py   候选 -> gallery.html 对比页
+tools/pick_workflow.py           选定一版装进 assets/figures/
+tools/render_drawio.py           单张 .drawio -> .jpg 兜底
+tools/make_drawio_embed.py  <name>.drawio -> <name>.html（页面内可编辑的 draw.io）
+tools/make_kim_rules.py     kim-rules/document.md -> kim-rules/index.html（重新导出步骤见脚本头注释）
+tools/render_drawio.py      <name>.drawio -> <name>.jpg（draw.io 编辑器连不上时的兜底）
+tools/make_label_demo.py    标注平台 demo -> label-platform/demo.html
+                            + /mmu_mllm_hdd_4/viewer/label-platform-demo/（独立版）
+build.py               把 md + template.html 编译成单个 index.html
+```
+
+## workflow 图怎么改
+
+正文那张图是从 10 个候选版式里挑出来的，候选全在 `middle_processing/workflow-variants/`，
+用 `gallery.html` 一页看完再定。
+
+```bash
+python3 tools/make_workflow_variants.py    # 10 个 .drawio
+python3 tools/render_variants.py           # 10 张 PNG（本地渲染，不走外网）
+python3 tools/build_variant_gallery.py     # 拼成 gallery.html
+python3 tools/pick_workflow.py v01-banded  # 选定一版装进 assets/figures/
+python3 build.py
+```
+
+- 版式写在 `tools/make_workflow_variants.py` 的 `v01()`…`v10()` 里；公共图元在
+  `tools/workflow_kit.py`（panel / card / chip / legend 这些），手法照着
+  `/mmu_mllm_hdd_4/deep-research/draw-io-blog` 那批论文图拆出来的
+- 内容（阶段、文案、MoE 两块）只写在 `make_workflow_variants.py` 顶部的常量里，十版共用
+- **在页面里拖也行**：右上角「下载 .drawio」存回 `assets/figures/`，再跑
+  `make_drawio_embed.py`；但下次 `pick_workflow.py` 会覆盖，手改的最好回填到脚本
+- `critic-workflow.jpg` 是编辑器连不上时的静态兜底；`embed.diagrams.net` 不通的网络
+  （训练机就是）只会看到它
+- 渲染用 `/mmu_mllm_hdd_4/deep-research/draw-io-blog/scripts/viewer-static.min.js`，
+  draw.io 官方 viewer 的本地副本，那个项目没了就把这个文件拷过来
+- `tools/render_drawio.py` 做同样的事，但只针对 `assets/figures/<name>`，单张重渲用它
+- `assets/figures/icons/` 是 8 个 Tabler outline 图标，当前这版没用上，留着备用
+
+## 标注平台（label-platform/studio/）
+
+data.md 内嵌的是线上平台 `collapse-0928-account.html` 本身，不是重写：
+
+- 页面、css、`review-storage.js` / `blind-account.js` / `eval.js` 从
+  `/mmu_mllm_hdd_4/viewer/critic-studio` 原样复制，页面只多两行 `<script>`、去掉 `?v=` 缓存戳
+- `mock-api.js`（手写）在浏览器里代替 `serve.py` 的 `/api/blind/*`：登录、分配、提交、
+  标注读写、质检指标，规则移植自 `blind_store.py` / `blind_metrics.py`
+- `mock-data.js`（生成，勿手改）：从 0928 批抽出的 10 条样本数据 + 真实标注记录（账号已替换）
+- `media/<uid>/`：这 10 条的视频、抽帧、参考图
+- 改动只存在浏览器 localStorage，页面左侧「重置演示数据」可还原
+
+iframe 带 `data-no-inline`：多文件页面不能被 build.py 内联成 srcdoc，必须保留真实 src。
+
+## assets
+
+```
+js/ css/     页面运行时（marked + KaTeX），build.py 内联进产物
+videos/      质检 demo 视频
+clips/       surveys/ 里交互组件用的视频
+logos/       surveys/ 论文表格里的机构标识
+papers/      论文首页截图
+demos/       surveys/ 内嵌的交互组件
+figures/     站点 logo
+setup-assets.sh   一键补齐上述素材
+```
+
+```bash
+bash assets/setup-assets.sh            # 缺什么补什么
+bash assets/setup-assets.sh --check    # 只校验
+bash assets/setup-assets.sh --force    # 全部重下
+```
+
+`demos/` `papers/` `figures/` 没有公开下载源，随仓库分发，脚本只校验存在性。
+
+## 改完怎么重建
+
+```bash
+node tools/gen-chart.mjs    # 只在改了 charts/src/** 或 tag-system.json 后需要
+node tools/verify.mjs       # 数据自检
+python3 build.py            # 出 index.html
+```
+
+`node` 不在 PATH 时用 `/home/fuhongyi/node-v18.20.5-linux-x64-glibc-217/bin/node`。
+
+## 两条容易踩的路径规则
+
+- **markdown 里的链接**按该 md 所在目录解析，build.py 会重写成相对项目根。
+- **`data-src` / iframe 内的路径**不走重写：`doc-preview.html` 被内联成 srcdoc，
+  srcdoc 没有自己的 URL，base 是项目根的 `index.html`，所以这类路径一律写成
+  **相对项目根**（`surveys/xxx.html`），不要写 `../`。
+- **`setup-assets.sh` 会拉最新的 marked**，而不同大版本的 heading 渲染钩子签名不一样
+  （老版传 `(text, level)`，新版传 token 对象）。`template.html` 里的 `heading()` 两种都认，
+  别改回只认一种 —— 之前就是这里让整页只渲染出第一个页签。
+

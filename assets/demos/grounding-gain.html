@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dumbbell comparison</title>
+<style>
+  :root{
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+    --ink:#1a1a1a;--muted:#9a9aa0;--muted2:#b8b8be;--border:#e6e6e6;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#f4f4f5;font-family:var(--font);color:var(--ink);
+    -webkit-font-smoothing:antialiased;padding:40px 20px;display:flex;justify-content:center;}
+  .card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:32px 36px 28px;
+    width:100%;max-width:920px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 28px rgba(0,0,0,.05);}
+  .title{font-size:22px;font-weight:650;letter-spacing:-.01em;margin:0;}
+  .subtitle{font-size:14.5px;color:var(--muted);margin:8px 0 0;line-height:1.5;max-width:640px;}
+  .note{font-size:14.5px;color:var(--muted);margin-top:18px;line-height:1.5;}
+  .foot{display:flex;align-items:center;gap:22px;margin-top:20px;font-size:13px;color:#555;}
+  .key{display:inline-flex;align-items:center;gap:8px;}
+  svg text{font-family:var(--font);}
+  .db-line{stroke:#c9c9cc;stroke-width:2;transition:stroke .15s;}
+  .db-rowmark:hover .db-line{stroke:#9a9aa0;}
+  .hit{cursor:pointer;}
+  #tip{position:fixed;z-index:50;pointer-events:none;background:#111;color:#fff;border-radius:8px;
+    padding:8px 11px;font-size:12.5px;line-height:1.45;box-shadow:0 6px 20px rgba(0,0,0,.25);
+    opacity:0;transition:opacity .12s;white-space:nowrap;}
+  #tip .t-cat{font-weight:600;} #tip .t-sub{color:#c8c8cc;} #tip b{color:#fff;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h2 class="title" id="title"></h2>
+  <p class="subtitle" id="subtitle"></p>
+  <div id="plot"></div>
+  <p class="note" id="note"></p>
+  <div class="foot" id="foot"></div>
+</div>
+<div id="tip"></div>
+
+<script>
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  DATA — edit this block only.                                  ║
+   ╚══════════════════════════════════════════════════════════════╝
+   A dumbbell (a.k.a. connected-dot / DNA) chart: each row has two
+   values — `pre` (open dot) and `post` (filled dot) — joined by a line,
+   good for showing a shift between two conditions.
+   ROWS are drawn top→bottom in array order; sort them yourself if you
+   want them ranked. Values are on a 0..AXIS_MAX scale (percent here). */
+const TITLE    = "RL 之后，定位精度的提升幅度";
+const SUBTITLE = "空心点是基座模型的零样本表现，实心点是同一基座接上定位奖励做 RL 之后的表现。差值就是奖励设计带来的净增量。";
+const NOTE     = "数值取自各论文主表；基座多为 Qwen2.5-VL-7B，指标为对应 benchmark 的主报告项。";
+const AXIS_MAX = 100;
+const UNIT     = "";
+const PRE_LABEL  = "基座零样本";
+const POST_LABEL = "接定位奖励 RL 后";
+const FOOTNOTE   = "同一基座、同一 benchmark 的前后对照";
+
+const ROWS = [
+  {m:"TempR1 · QVHighlights mIoU",        pre:18.0, post:71.1},
+  {m:"STVG-R1 · HC-STVG-v2 m_IoU",        pre:20.0, post:40.9},
+  {m:"Time-R1 · Charades R1@0.7",         pre:19.5, post:35.3},
+  {m:"TempR1 · ActivityNet mIoU",         pre:20.2, post:32.2},
+  {m:"MUSEG · Charades mIoU",             pre:50.2, post:59.7},
+  {m:"TaRO · Charades mIoU",              pre:50.2, post:61.4},
+];
+/* ────────────────────────── end DATA ────────────────────────── */
+
+const tip=document.getElementById("tip");
+function showTip(html,e){tip.innerHTML=html;tip.style.opacity=1;moveTip(e);}
+function moveTip(e){const pad=14;let x=e.clientX+pad,y=e.clientY+pad;const r=tip.getBoundingClientRect();
+  if(x+r.width>innerWidth)x=e.clientX-r.width-pad;if(y+r.height>innerHeight)y=e.clientY-r.height-pad;
+  tip.style.left=x+"px";tip.style.top=y+"px";}
+function hideTip(){tip.style.opacity=0;}
+
+function render(){
+  const NS="http://www.w3.org/2000/svg";
+  const W=848,rowH=46,padTop=14,padBot=44;
+  const H=padTop+ROWS.length*rowH+padBot;
+  const xLabel=168,xPlotL=184,xPlotR=560,xValue=600;
+  const x=p=>xPlotL+(p/AXIS_MAX)*(xPlotR-xPlotL);
+
+  const svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);svg.setAttribute("width","100%");
+
+  // gridlines + axis labels at 0, mid, max
+  [0,AXIS_MAX/2,AXIS_MAX].forEach(t=>{
+    const gx=x(t);
+    const ln=document.createElementNS(NS,"line");
+    ln.setAttribute("x1",gx);ln.setAttribute("x2",gx);
+    ln.setAttribute("y1",padTop-2);ln.setAttribute("y2",padTop+ROWS.length*rowH);
+    ln.setAttribute("stroke",t===0?"#c9c9cc":"#eee");ln.setAttribute("stroke-width","1");
+    svg.appendChild(ln);
+    const lab=document.createElementNS(NS,"text");
+    lab.setAttribute("x",gx);lab.setAttribute("y",padTop+ROWS.length*rowH+22);
+    lab.setAttribute("text-anchor","middle");lab.setAttribute("font-size","13");lab.setAttribute("fill","#9a9aa0");
+    lab.textContent=t+UNIT;svg.appendChild(lab);
+  });
+
+  ROWS.forEach((row,i)=>{
+    const cy=padTop+i*rowH+rowH/2,xPre=x(row.pre),xPost=x(row.post);
+    const g=document.createElementNS(NS,"g");g.setAttribute("class","db-rowmark");
+
+    const lab=document.createElementNS(NS,"text");
+    lab.setAttribute("x",xLabel);lab.setAttribute("y",cy+5);lab.setAttribute("text-anchor","end");
+    lab.setAttribute("font-size","14.5");lab.setAttribute("fill","#2a2a2a");lab.textContent=row.m;g.appendChild(lab);
+
+    const ln=document.createElementNS(NS,"line");ln.setAttribute("class","db-line");
+    ln.setAttribute("x1",xPre);ln.setAttribute("x2",xPost);ln.setAttribute("y1",cy);ln.setAttribute("y2",cy);g.appendChild(ln);
+
+    const c2=document.createElementNS(NS,"circle");
+    c2.setAttribute("cx",xPost);c2.setAttribute("cy",cy);c2.setAttribute("r","7");c2.setAttribute("fill","#111");g.appendChild(c2);
+    const c1=document.createElementNS(NS,"circle");
+    c1.setAttribute("cx",xPre);c1.setAttribute("cy",cy);c1.setAttribute("r","6.5");
+    c1.setAttribute("fill","#fff");c1.setAttribute("stroke","#333");c1.setAttribute("stroke-width","2");g.appendChild(c1);
+
+    const val=document.createElementNS(NS,"text");
+    val.setAttribute("x",xValue);val.setAttribute("y",cy+5);val.setAttribute("font-size","14");val.setAttribute("fill","#888");
+    val.innerHTML=`${row.pre}${UNIT} <tspan fill="#bbb">→</tspan> <tspan font-weight="700" fill="#1a1a1a" font-size="15">${row.post}${UNIT}</tspan>`;
+    g.appendChild(val);
+
+    const hit=document.createElementNS(NS,"rect");
+    hit.setAttribute("class","hit");hit.setAttribute("x",0);hit.setAttribute("y",cy-rowH/2);
+    hit.setAttribute("width",W);hit.setAttribute("height",rowH);hit.setAttribute("fill","transparent");
+    hit.addEventListener("mousemove",e=>showTip(
+      `<div class="t-cat">${row.m}</div><div class="t-sub">${PRE_LABEL}: <b>${row.pre}${UNIT}</b></div><div class="t-sub">${POST_LABEL}: <b>${row.post}${UNIT}</b></div>`,e));
+    hit.addEventListener("mouseleave",hideTip);g.appendChild(hit);
+
+    svg.appendChild(g);
+  });
+  document.getElementById("plot").appendChild(svg);
+}
+
+document.getElementById("title").textContent=TITLE;
+document.getElementById("subtitle").textContent=SUBTITLE;
+document.getElementById("note").textContent=NOTE;
+document.getElementById("foot").innerHTML=
+  `<span class="key"><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="#fff" stroke="#333" stroke-width="2"/></svg> ${PRE_LABEL}</span>`+
+  `<span class="key"><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="#111"/></svg> ${POST_LABEL}</span>`+
+  `<span style="color:var(--muted2)">${FOOTNOTE}</span>`;
+render();
+addEventListener("scroll",hideTip,true);
+</script>
+</body>
+</html>
+

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slope chart</title>
+<style>
+  :root{
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+    --ink:#1a1a1a;--muted:#9a9aa0;--muted2:#b8b8be;--border:#e6e6e6;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:#f4f4f5;font-family:var(--font);color:var(--ink);
+    -webkit-font-smoothing:antialiased;padding:40px 20px;display:flex;justify-content:center;}
+  .card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:30px 34px 26px;
+    width:100%;max-width:760px;box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 28px rgba(0,0,0,.05);}
+  .title{font-size:18px;font-weight:600;letter-spacing:-.01em;margin:0 0 14px;line-height:1.35;max-width:560px;}
+  .note{font-size:13.5px;color:var(--muted);margin-top:16px;line-height:1.5;max-width:600px;}
+  svg text{font-family:var(--font);}
+  .slp{transition:opacity .12s ease, stroke-width .12s ease;}
+  .dot{transition:opacity .12s ease;}
+  .endlab{transition:opacity .12s ease;}
+  .smark{cursor:pointer;}
+  /* dim everyone, then un-dim the hovered series */
+  svg.dimming .slp,svg.dimming .dot,svg.dimming .endlab{opacity:.15;}
+  svg.dimming .smark.active .slp{opacity:1;stroke-width:2.5;}
+  svg.dimming .smark.active .dot{opacity:1;}
+  svg.dimming .endlab.active{opacity:1;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h2 class="title" id="title"></h2>
+  <div id="plot"></div>
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+/* ╔══════════════════════════════════════════════════════════════╗
+   ║  DATA — edit this block only.                                 ║
+   ╚══════════════════════════════════════════════════════════════╝
+   Slope chart: two parallel vertical axes (LEFT vs RIGHT), one line
+   per entity connecting its value on each side. Steepness/crossing of
+   lines tells the "who pulled ahead / fell behind" story. Each entity
+   can carry a `group` key → colored via GROUPS palette; hover a line to
+   isolate that entity (the rest dim).
+
+   Values are on a 0..AXIS_MAX scale (percent here). End labels are
+   auto-stacked so they don't overlap.                                    */
+const TITLE     = "重标注之后，榜单重排";
+const NOTE      = "TimeLens 按唯一性、存在性、清晰度、准确性四条标准人工重标了三个最常用的数据集。名次不是等比例下降，而是发生了交换——在旧集上调出来的方法掉得最狠。数值为示意量级，用于表达这一结构性结论。";
+const LEFT_LABEL  = "原标注";
+const RIGHT_LABEL = "TimeLens 重标注";
+const AXIS_MAX  = 70;
+const UNIT      = "";
+
+const GROUPS = {
+  tuned:   "#c0392b",
+  free:    "#2f6fed",
+  distill: "#1f9d55",
+};
+
+const SERIES = [
+  {m:"在旧集上调参的方法 A", group:"tuned",   left:61.4, right:42.1},
+  {m:"在旧集上调参的方法 B", group:"tuned",   left:60.6, right:39.8},
+  {m:"TimeLens（thinking-free）", group:"free", left:58.2, right:51.7},
+  {m:"Video-OPD（on-policy 蒸馏）", group:"distill", left:57.9, right:50.3},
+];
+/* ────────────────────────── end DATA ────────────────────────── */
+
+const NS="http://www.w3.org/2000/svg";
+const el=(n,a)=>{const x=document.createElementNS(NS,n);for(const k in a)x.setAttribute(k,a[k]);return x;};
+const color=s=>GROUPS[s.group]||"#1a1a1a";
+
+function render(){
+  const W=760,H=460,top=32,bot=444,xL=220,xR=540;
+  const y=v=>bot-(v/AXIS_MAX)*(bot-top);
+  const svg=el("svg",{viewBox:`0 0 ${W} ${H}`,width:"100%",role:"img","aria-label":`${LEFT_LABEL} vs ${RIGHT_LABEL}, by entity`});
+  svg.style.display="block";svg.style.overflow="visible";
+
+  // axis headers + vertical rails
+  const hL=el("text",{x:xL,y:16,"text-anchor":"middle","font-size":13,"font-weight":500,"letter-spacing":"0.06em",fill:"#9a9aa0"});hL.textContent=LEFT_LABEL;svg.appendChild(hL);
+  const hR=el("text",{x:xR,y:16,"text-anchor":"middle","font-size":13,"font-weight":500,"letter-spacing":"0.06em",fill:"#9a9aa0"});hR.textContent=RIGHT_LABEL;svg.appendChild(hR);
+  svg.appendChild(el("line",{x1:xL,x2:xL,y1:top,y2:bot,stroke:"#e6e6e6","stroke-width":1}));
+  svg.appendChild(el("line",{x1:xR,x2:xR,y1:top,y2:bot,stroke:"#e6e6e6","stroke-width":1}));
+
+  // connecting lines + endpoint dots, wrapped in a hit group each
+  const groups=[];
+  SERIES.forEach(s=>{
+    const c=color(s),yl=y(s.left),yr=y(s.right);
+    const g=el("g",{class:"smark"});
+    g.appendChild(el("line",{x1:xL,y1:yl,x2:xR,y2:yr,stroke:"transparent","stroke-width":14}));
+    g.appendChild(el("line",{class:"slp",x1:xL,y1:yl,x2:xR,y2:yr,stroke:c,"stroke-width":1.5,opacity:1,"pointer-events":"none"}));
+    g.appendChild(el("circle",{class:"dot",cx:xL,cy:yl,r:2.75,fill:c,"pointer-events":"none"}));
+    g.appendChild(el("circle",{class:"dot",cx:xR,cy:yr,r:2.75,fill:c,"pointer-events":"none"}));
+    s._g=g;svg.appendChild(g);groups.push(g);
+  });
+
+  // ── end labels, stacked so they don't collide ──
+  function placeLabels(side){
+    const xAxis=side==="left"?xL:xR;
+    const items=SERIES.map(s=>({s,v:side==="left"?s.left:s.right})).sort((a,b)=>b.v-a.v);
+    const minGap=16;let prev=-1e9;
+    items.forEach(it=>{
+      let yy=y(it.v);
+      if(yy-prev<minGap)yy=prev+minGap;
+      prev=yy;it.y=yy;
+    });
+    items.forEach(it=>{
+      const s=it.s,c=color(s),anchor=side==="left"?"end":"start",
+        tx=side==="left"?xAxis-22:xAxis+22, datY=y(it.v);
+      const g=el("g",{class:"endlab"});
+      // leader line if the label was nudged off its true position
+      if(Math.abs(it.y-datY)>1.5){
+        const x1=side==="left"?xAxis-6:xAxis+6, x2=side==="left"?xAxis-18:xAxis+18;
+        g.appendChild(el("line",{x1,y1:datY,x2,y2:it.y-4.5,stroke:c,"stroke-width":1,opacity:.5}));
+      }
+      const t=el("text",{x:tx,y:it.y,"text-anchor":anchor,"font-size":13,fill:c,"font-weight":500});
+      const vt=`${it.v}${UNIT}`;
+      if(side==="left"){
+        t.innerHTML=`<tspan>${s.m}</tspan><tspan dx="8" font-size="14" font-weight="500" style="font-variant-numeric:tabular-nums;">${vt}</tspan>`;
+      }else{
+        t.innerHTML=`<tspan font-size="14" font-weight="500" style="font-variant-numeric:tabular-nums;">${vt}</tspan><tspan dx="8">${s.m}</tspan>`;
+      }
+      g.appendChild(t);s._g["_lab_"+side]=g;svg.appendChild(g);
+    });
+  }
+  placeLabels("left");placeLabels("right");
+
+  // hover isolate
+  groups.forEach(g=>{
+    const on=()=>{
+      svg.classList.add("dimming");g.classList.add("active");
+      g._lab_left&&g._lab_left.classList.add("active");
+      g._lab_right&&g._lab_right.classList.add("active");
+    };
+    const off=()=>{
+      svg.classList.remove("dimming");g.classList.remove("active");
+      g._lab_left&&g._lab_left.classList.remove("active");
+      g._lab_right&&g._lab_right.classList.remove("active");
+    };
+    g.addEventListener("mouseenter",on);g.addEventListener("mouseleave",off);
+  });
+
+  document.getElementById("plot").appendChild(svg);
+}
+
+document.getElementById("title").textContent=TITLE;
+const note=document.getElementById("note");if(NOTE)note.textContent=NOTE;else note.style.display="none";
+render();
+</script>
+</body>
+</html>
+

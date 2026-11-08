@@ -1,0 +1,31 @@
+/* 标注 modal 的壳：遮罩、窗口、macOS 标题栏与红黄绿灯。
+   播放器主体样式在 45-player.css（与内联宿主共用），这里只管「弹窗」这层。
+   body.kc-expanded 那几条是被父页 srcdoc 内联时的全屏协商，见 00-iframe.js。
+   黄/绿灯是纯装饰，没有 handler —— 只有红灯接了 closeModal。 */
+  .overlay{position:fixed;inset:0;background:rgba(12,15,20,.55);backdrop-filter:blur(3px);
+           display:none;align-items:center;justify-content:center;z-index:50;padding:24px}
+  .overlay.on{display:flex}
+  /* when a parent page has blown this iframe up to fullscreen, the host card is
+     hidden and the overlay goes transparent — the parent dims+blurs the REAL page
+     behind us, so the modal floats over the (blurred) page, not over our own card. */
+  body.kc-expanded .wrap{visibility:hidden}
+  /* background:transparent only takes effect once the modal is actually open (same
+     frame as .overlay.on). Going transparent on button-click would land BEFORE the
+     parent's scrim and flash the white page through. */
+  body.kc-expanded.kc-modal-open{background:transparent}
+  body.kc-expanded.kc-modal-open .overlay{background:transparent;backdrop-filter:none;padding:0}
+  .modal{width:min(1240px,100%);max-height:92vh;background:#ffffff;color:#1c1c1e;border-radius:12px;
+         overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+  .mhead{display:flex;align-items:center;gap:10px;padding:13px 20px;background:#ebebeb;
+         border-bottom:1px solid #d0d0d0;flex:none;min-height:44px}
+  .mhead .mt{font-size:15px;font-weight:700;color:#1c1c1e}
+  .mhead .mp{font-family:var(--mono);font-size:11px;color:#8e8e93}
+  .mhead .mbadge{font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:6px;letter-spacing:.03em;color:#fff}
+  /* macOS traffic-light close/min/max buttons */
+  .traflights{display:flex;align-items:center;gap:8px;margin-right:10px;flex:none}
+  .tfl{appearance:none;border:0;padding:0;width:13px;height:13px;border-radius:50%;cursor:pointer;transition:.1s;flex:none}
+  .tfl-r{background:#ff5f57}.tfl-r:hover{background:#e0443e}
+  .tfl-y{background:#febc2e}.tfl-y:hover{background:#e0a325}
+  .tfl-g{background:#28c840}.tfl-g:hover{background:#1eab32}
+  /* demo selector strip */
+

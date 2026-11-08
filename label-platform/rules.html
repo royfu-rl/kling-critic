@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>标注规则 · 双人盲标</title>
+<style>
+  :root{--bg:#fff;--soft:#f6f7f9;--band:#f0f2f5;--ink:#111418;--mute:#5b636e;--faint:#8a929e;
+    --line:#e4e7ec;--brand:#2f6bff;--ok:#1a7f45;--no:#c0392b;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:13.5px/1.7 var(--sans);-webkit-font-smoothing:antialiased}
+  .doc{max-width:860px;margin:0 auto;padding:26px 28px 40px}
+  .kick{font:600 10.5px/1 var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--faint);margin:0 0 7px}
+  h1{font-size:21px;letter-spacing:-.015em;margin:0 0 4px}
+  .lede{color:var(--mute);margin:0 0 22px}
+  h2{font-size:15px;margin:26px 0 9px;letter-spacing:-.01em}
+  p{margin:9px 0}
+  ol,ul{margin:9px 0;padding-left:21px}
+  li{margin:4px 0}
+  code{font-family:var(--mono);font-size:.9em;background:var(--band);padding:1px 5px;border-radius:4px}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:12.5px}
+  th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:var(--soft);color:var(--mute);font-weight:600;font-size:11px;
+    letter-spacing:.04em;text-transform:uppercase}
+  .roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px;margin:12px 0}
+  .role{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--soft)}
+  .role b{display:block;font-size:13.5px}
+  .role span{color:var(--mute);font-size:12px}
+  .role em{display:block;margin-top:5px;font-style:normal;font:11px var(--mono);color:var(--faint)}
+  .note{border-left:3px solid var(--brand);background:#eef3ff;border-radius:0 8px 8px 0;
+    padding:9px 14px;margin:14px 0;color:var(--mute)}
+  .warn{border-left-color:#e8a87c;background:#fff4ed}
+  .tag{display:inline-block;font:600 10.5px/1.7 var(--mono);padding:1px 8px;border-radius:999px;
+    background:var(--band);color:var(--mute)}
+  .no{color:var(--no);font-weight:600}
+  .ok{color:var(--ok);font-weight:600}
+</style>
+</head>
+<body>
+<div class="doc">
+  <p class="kick">Annotation Protocol</p>
+  <h1>双人盲标 · 复核 · 评测员终审</h1>
+  <p class="lede">一条视频要进训练集，必须先在这套流程里拿到一个没有争议的结论。规则分三块：谁来标、怎么定终态、什么情况不交付。</p>
+
+  <h2>一 · 角色与账号</h2>
+  <div class="roles">
+    <div class="role"><b>标注员 A</b><span>盲标槽位 1</span><em>annotator_1</em></div>
+    <div class="role"><b>标注员 B</b><span>盲标槽位 2</span><em>annotator_2</em></div>
+    <div class="role"><b>复核员</b><span>两人分歧时仲裁，可多人</span><em>reviewer_3</em></div>
+    <div class="role"><b>评测员</b><span>终审，共享一个槽位</span><em>admin</em></div>
+  </div>
+  <p>槽位由服务端在登录后分配，同一条视频的两个标注槽位不会落到同一个人。</p>
+  <div class="note warn">
+    <b>账号隔离。</b>两名标注员互相看不到对方的结论、证据框和备注，也看不到当前视频的终态——
+    终态是从别人的判断推出来的，露出来盲标就失效了。复核员能看到两名标注员；评测员能看到所有人。
+  </div>
+
+  <h2>二 · 视频级终态</h2>
+  <p>按优先级往下走，命中即停：</p>
+  <ol>
+    <li>评测员标了 → 用评测员的结论</li>
+    <li>两名标注员一致 → 用该结论</li>
+    <li>不一致 → 用复核员的结论；多名复核员按 <code>sha256</code> 稳定挑一个，避免每次回放结果不同</li>
+    <li>以上都拿不到 → <span class="no">不交付</span>（<code>分歧未复核</code> / <code>标注未完成</code>）</li>
+  </ol>
+
+  <h2>三 · 证据级终态</h2>
+  <p>每条人工框单独定，优先级同上：评测员 &gt; 复核员 &gt; 画框的标注员。</p>
+  <table>
+    <tr><th>情形</th><th>结果</th></tr>
+    <tr><td>评测员显式标了 ✅❎⭐️，或自己补了框</td><td class="ok">按评测员</td></tr>
+    <tr><td>复核员显式标了</td><td class="ok">按复核员</td></tr>
+    <tr><td>视频级终审判「无」</td><td>没被单独标过的框，随视频一并不采纳</td></tr>
+    <tr><td>标注员画了框，无人改判</td><td class="ok">采纳（画框本身就是认定）</td></tr>
+    <tr><td>⭐️（轻微）</td><td class="ok">采纳，按轻微处理</td></tr>
+  </table>
+  <p>只有采纳的证据进交付件；不采纳的留在报告里记 <code>不采纳·&lt;谁定的&gt;</code>，不进训练数据。</p>
+
+  <div class="note">
+    <b>一条容易踩的边界。</b>视频级判「有」、却没有任何一条被采纳的证据 → <span class="no">不交付</span>。
+    这种样本按 <code>verdict=无异常</code> 交出去就是错标签，宁可丢掉。
+  </div>
+
+  <h2>四 · 质检指标</h2>
+  <table>
+    <tr><th>指标</th><th>口径</th><th>看什么</th></tr>
+    <tr><td><b>人评一致性</b></td>
+        <td>两名标注员在视频级结论上的一致率，配 2×2 混淆矩阵</td>
+        <td>一致率低说明标注规范本身有歧义，要回头改规则而不是压标注员</td></tr>
+    <tr><td><b>抽检标注准召</b></td>
+        <td>以评测员终审为真值，统计标注员提交证据的准确率 / 召回率 / F1</td>
+        <td>准确率低 = 乱framing；召回率低 = 漏标，两者要分开治</td></tr>
+  </table>
+  <p>两项都按批次、按 L3 标签切片看——总体达标但某个垂类塌陷是常态。</p>
+</div>
+</body>
+</html>
+

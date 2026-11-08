@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>frame-annotation-modal</title>
+<style>
+  :root{
+    --bg:#ffffff; --bg-soft:#f6f7f9; --ink:#111418; --ink-soft:#5b636e; --ink-faint:#8b929c;
+    --line:#e4e7ec; --brand:#2f6bff;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg-soft);color:var(--ink);font-family:var(--sans);line-height:1.55;
+       -webkit-font-smoothing:antialiased;font-size:14px}
+
+  /* ── host card: only here to make the template openable on its own. When you
+        drop this block into a real page, keep the modal and throw this away. ── */
+  .host{max-width:620px;margin:0 auto;padding:60px 20px}
+  .hostcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px 28px;
+            box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 28px rgba(0,0,0,.05)}
+  .hostcard h2{margin:0 0 4px;font-size:17px;font-weight:800;letter-spacing:-.01em}
+  .hostcard p{margin:0 0 18px;color:var(--ink-soft);font-size:12.5px}
+  .trigbtn{appearance:none;width:100%;border:1px solid var(--brand);background:var(--brand);color:#fff;
+           font-family:inherit;font-size:12.5px;font-weight:700;padding:9px 12px;border-radius:9px;cursor:pointer;
+           transition:.12s;display:flex;align-items:center;justify-content:center;gap:7px}
+  .trigbtn:hover{filter:brightness(1.06)}
+
+  /* ══ annotation modal (video + JSON) — macOS light style ═══════════════ */
+  .overlay{position:fixed;inset:0;background:rgba(12,15,20,.55);backdrop-filter:blur(3px);
+           display:none;align-items:center;justify-content:center;z-index:50;padding:24px}
+  .overlay.on{display:flex}
+  /* when a parent page has blown this iframe up to fullscreen, the host card is
+     hidden and the overlay goes transparent — the parent dims+blurs the REAL page
+     behind us, so the modal floats over the (blurred) page, not over our own card. */
+  body.kc-expanded .host{visibility:hidden}
+  /* background:transparent only takes effect once the modal is actually open (same
+     frame as .overlay.on). Going transparent on button-click would land BEFORE the
+     parent's scrim and flash the white page through. */
+  body.kc-expanded.kc-modal-open{background:transparent}
+  body.kc-expanded.kc-modal-open .overlay{background:transparent;backdrop-filter:none;padding:0}
+  .modal{width:min(1240px,100%);max-height:92vh;background:#ffffff;color:#1c1c1e;border-radius:12px;
+         overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+  .mhead{display:flex;align-items:center;gap:10px;padding:13px 20px;background:#ebebeb;
+         border-bottom:1px solid #d0d0d0;flex:none;min-height:44px}
+  .mhead .mt{font-size:15px;font-weight:700;color:#1c1c1e}
+  .mhead .mp{font-family:var(--mono);font-size:11px;color:#8e8e93}
+  .mhead .mbadge{font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:6px;letter-spacing:.03em;color:#fff}
+  /* macOS traffic-light close/min/max buttons */
+  .traflights{display:flex;align-items:center;gap:8px;margin-right:10px;flex:none}
+  .tfl{appearance:none;border:0;padding:0;width:13px;height:13px;border-radius:50%;cursor:pointer;transition:.1s;flex:none}
+  .tfl-r{background:#ff5f57}.tfl-r:hover{background:#e0443e}
+  .tfl-y{background:#febc2e}.tfl-y:hover{background:#e0a325}
+  .tfl-g{background:#28c840}.tfl-g:hover{background:#1eab32}
+  /* demo selector strip */
+  .demostrip{display:flex;gap:7px;padding:11px 20px 0;flex-wrap:wrap;flex:none;background:#fff}
+  .demopill{appearance:none;border:1px solid #d0d0d0;background:#f2f2f4;color:#555;
+            font-family:inherit;font-size:11.5px;font-weight:650;padding:5px 12px;border-radius:999px;cursor:pointer;transition:.12s}
+  .demopill:hover{border-color:#aaa;color:#1c1c1e}
+  .demopill.on{background:#2f6bff;border-color:#2f6bff;color:#fff}
+  /* two-column body: video left, json right — minmax(0,..) lets both columns shrink
+     so neither can push its content past the modal frame */
+  .mbody{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:0;min-height:0;overflow:auto}
+  .vcol{padding:18px 20px;border-right:1px solid #e0e0e0;min-width:0;background:#fff;display:flex;flex-direction:column;min-height:0}
+  .jcol{padding:16px;min-width:0;background:#f5f5f7;overflow:auto;display:flex}
+  .vcap{font-size:12px;color:#6b6b6b;margin:0 0 10px}
+  .vcap b{color:#1c1c1e;font-weight:700}
+  /* stable 16:9 box: swapping demo src can no longer collapse/resize the frame (kills flicker) */
+  .video-wrapper{position:relative;border-radius:11px;overflow:hidden;background:#000;line-height:0;aspect-ratio:16/9;max-height:56vh;flex:none}
+  .video-wrapper video{width:100%;height:100%;display:block;object-fit:contain;cursor:pointer;opacity:1;transition:opacity .18s ease}
+
+  /* ── frame-level grounding boxes, laid over the video ──
+     The layer is sized/positioned by fitAnnotationLayer() to the video's OWN
+     letterboxed content rect, not the wrapper — otherwise every box drifts by
+     the size of the black bars. */
+  .annotation-layer{position:absolute;z-index:2;pointer-events:none;overflow:visible;opacity:1;transition:opacity .18s ease}
+  .annotation-box{position:absolute;border:2px solid #ff3b30;border-radius:3px;
+                  box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 12px rgba(255,59,48,.38);
+                  animation:annotationPulse 1.15s ease-in-out infinite alternate}
+  .annotation-box[data-sev="2"]{border-color:#e0701a;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 12px rgba(224,112,26,.38);animation:none}
+  .annotation-box[data-sev="1"]{border-color:#d4a017;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 12px rgba(212,160,23,.38);animation:none}
+  .annotation-box span{position:absolute;left:-2px;top:-23px;max-width:260px;overflow:hidden;text-overflow:ellipsis;
+                       white-space:nowrap;padding:3px 6px;border-radius:3px 3px 3px 0;background:rgba(155,18,15,.92);
+                       color:#ffcbc7;font-size:11px;line-height:1.25;font-weight:700;letter-spacing:.2px;
+                       text-shadow:0 1px 1px #000;box-shadow:0 1px 5px rgba(0,0,0,.5)}
+  .annotation-box[data-sev="2"] span{background:rgba(150,72,10,.92);color:#ffe0c4}
+  .annotation-box[data-sev="1"] span{background:rgba(133,99,8,.92);color:#ffeec0}
+  /* box hugging the top edge — flip the label inside so it isn't clipped away */
+  .annotation-box.near-top span{top:2px;left:2px;border-radius:3px}
+  @keyframes annotationPulse{
+    from{border-color:#ff3b30}
+    to{border-color:#ff7b72;box-shadow:0 0 0 1px rgba(0,0,0,.65),0 0 18px rgba(255,59,48,.62)}
+  }
+
+  .vcontrols{position:absolute;left:0;right:0;bottom:0;z-index:3;padding:12px 14px 10px;
+             background:linear-gradient(transparent,rgba(0,0,0,.72));display:flex;flex-direction:column;gap:9px;
+             opacity:0;transition:opacity .2s}
+  .video-wrapper:hover .vcontrols,.vcontrols.show{opacity:1}
+  /* timeline / progress with problem-frame markers */
+  .track{position:relative;height:22px;display:flex;align-items:center;cursor:pointer}
+  .rail{position:absolute;left:0;right:0;height:5px;border-radius:3px;background:rgba(255,255,255,.25)}
+  .rfill{position:absolute;left:0;height:5px;border-radius:3px;background:#3b82f6;width:0;pointer-events:none}
+  .mark{position:absolute;top:50%;width:13px;height:13px;border-radius:50%;transform:translate(-50%,-50%);
+        border:2px solid #fff;cursor:pointer;transition:.12s;z-index:2}
+  .mark:hover{transform:translate(-50%,-50%) scale(1.25)}
+  .mark.act{box-shadow:0 0 0 3px rgba(255,255,255,.5)}
+  .mark[data-sev="3"]{background:#e5484d}
+  .mark[data-sev="2"]{background:#e0701a}
+  .mark[data-sev="1"]{background:#d4a017}
+  .crow{display:flex;align-items:center;gap:11px}
+  .cbtn{background:none;border:0;padding:0;cursor:pointer;color:#fff;font-size:16px;line-height:1;flex:none;transition:opacity .2s}
+  .cbtn:hover{opacity:.8}
+  .ctime{font-size:11.5px;color:#e8e8ea;font-variant-numeric:tabular-nums;flex:none;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+  .cspacer{flex:1}
+  .jumpwrap{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+  .jump{appearance:none;border:1px solid #d0d0d0;background:#f2f2f4;color:#555;
+        font-family:var(--mono);font-size:11px;font-weight:600;padding:4px 9px;border-radius:7px;cursor:pointer;transition:.12s;
+        display:inline-flex;align-items:center;gap:6px}
+  .jump:hover{border-color:#aaa;color:#1c1c1e}
+  .jump.act{border-color:#3b82f6;color:#2f6bff;background:rgba(59,130,246,.1)}
+  .jump .jd{width:7px;height:7px;border-radius:50%}
+  .jump .jd[data-sev="3"]{background:#e5484d}.jump .jd[data-sev="2"]{background:#e0701a}.jump .jd[data-sev="1"]{background:#d4a017}
+  /* json panel — dark editor card */
+  .jcard{display:flex;flex-direction:column;width:100%;min-width:0;background:#1a1d24;border-radius:10px;
+         overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.18);align-self:flex-start;max-height:100%}
+  .jhead{display:flex;align-items:center;gap:8px;margin:0;padding:10px 14px;background:#0f1117;
+         border-bottom:1px solid rgba(255,255,255,.08);flex:none}
+  .jhead .jt{font-size:12.5px;font-weight:600;color:#9CA3AF;font-family:var(--mono)}
+  .jhead .jc{margin-left:auto;font-size:15px;color:#9CA3AF;cursor:pointer;transition:.2s}
+  .jhead .jc:hover{color:#F8FAFC}
+  .jhead .jc.copied{color:#10B981}
+  .jbodywrap{padding:14px 16px;overflow:auto;min-height:0}
+  /* pre-wrap, not pre: `reasoning` is a full sentence and would otherwise run off
+     the card into a horizontal scrollbar nobody finds */
+  pre.json{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#E5E7EB;white-space:pre-wrap;word-break:break-word}
+  .json .jk{color:#60A5FA}.json .js{color:#34D399}.json .jn{color:#F59E0B}.json .jp{color:#6B7280}
+  .jempty{color:#6B7280;font-size:12px;font-family:var(--mono);white-space:normal}
+  @media(max-width:760px){.mbody{grid-template-columns:1fr}.vcol{border-right:0;border-bottom:1px solid #e0e0e0}}
+</style>
+</head>
+<body>
+
+<!-- host card — replace with your own trigger when embedding -->
+<div class="host" id="host">
+  <div class="hostcard">
+    <h2>帧级标注复核</h2>
+    <p>一段视频 + 帧级缺陷标注：进度条标出问题帧，画面上画 grounding 框，右侧同步该帧的标注 JSON。</p>
+    <button class="trigbtn" id="open-demo"></button>
+  </div>
+</div>
+
+<!-- annotation modal -->
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="mhead">
+      <div class="traflights">
+        <button class="tfl tfl-r" id="m-close" aria-label="关闭" title="关闭"></button>
+        <button class="tfl tfl-y" aria-label="最小化" title="最小化"></button>
+        <button class="tfl tfl-g" aria-label="最大化" title="最大化"></button>
+      </div>
+      <span class="mt" id="m-title">标注数据</span>
+      <span class="mbadge" id="m-badge" style="display:none"></span>
+      <span class="mp" id="m-path"></span>
+    </div>
+    <div class="demostrip" id="m-strip"></div>
+    <div class="mbody">
+      <div class="vcol">
+        <p class="vcap" id="v-cap"></p>
+        <div class="video-wrapper" id="v-wrap">
+          <video id="v-el" playsinline preload="metadata"></video>
+          <div class="annotation-layer" id="v-layer" aria-hidden="true"></div>
+          <div class="vcontrols" id="v-controls">
+            <div class="track" id="v-track">
+              <div class="rail"></div>
+              <div class="rfill" id="v-fill"></div>
+            </div>
+            <div class="crow">
+              <button class="cbtn" id="v-play" aria-label="播放/暂停">▶</button>
+              <span class="ctime" id="v-time">0:00 / 0:00</span>
+              <span class="cspacer"></span>
+              <button class="cbtn" id="v-mute" aria-label="静音">🔊</button>
+            </div>
+          </div>
+        </div>
+        <div class="jumpwrap" id="v-jumps"></div>
+      </div>
+      <div class="jcol">
+        <div class="jcard">
+          <div class="jhead">
+            <span class="jt">frame-annotation.json</span>
+            <span class="jc" id="j-copy" title="复制">⧉</span>
+          </div>
+          <div class="jbodywrap">
+            <pre class="json" id="j-body"><span class="jempty">点击进度条上的问题帧标记查看该帧标注。</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║  DATA — edit this block only.                                            ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+const OPEN_ON_LOAD     = true;
+const AUTOSELECT_FIRST = true;
+const TRIGGER_LABEL    = "▷ 打开命中帧标注（15s · 4 fps · 60 帧）";
+
+const DEMO_SET = {
+  title: "生物结构异常",
+  path : "视频质检 › 时空定位命中帧",
+  badge: "4 fps · 60 帧",  badgeColor: "#c2562f",
+
+  demos: [
+    { label: "case-01 · 时序命中 + 空间命中",
+      src : "../clips/sample.mp4",
+      caption: "素材为公开测试片，<b>标注内容为示意</b>，用于说明输出结构。帧号按 4 fps 折算：<code>frame = round(t × 4)</code>。",
+      frames: [
+        { time: 3.5, hold: 1.6, severity: 3,
+          box: {x: 34, y: 12, w: 46, h: 74},
+          dimension: "生物结构异常", target: "第 14 帧 · 画面中央缠斗主体",
+          reasoning: "高速运动中主体躯干与四肢结构融合，肢体数量与连接关系不可辨识，无法还原为合理解剖结构。时序上命中区间 [3.4s, 5.1s]，对应第 14 至 20 帧；空间上命中中央主体。这一条同时给出时序区间与空间框，才是可核验的输出。" },
+        { time: 6.2, hold: 1.4, severity: 2,
+          box: {x: 33, y: 26, w: 14, h: 62},
+          dimension: "生物结构异常", target: "第 25 帧 · 左侧站立人物",
+          reasoning: "站立人物持械手部与武器交界处粘连，握持关系不成立，但主体整体仍可辨识。严重度取 2，不取 3——严重度描述的是异常程度，不是模型的置信度，两者不能混用。" },
+        { time: 8.1, hold: 1.2, severity: 1,
+          box: {x: 4, y: 55, w: 26, h: 33},
+          dimension: "生物结构异常", target: "第 32 帧 · 左下前景岩石",
+          reasoning: "前景岩石边缘出现轻微拖影与轮廓抖动。这不是生物结构，严格说不该计入本维度；保留它是为了说明一个常见误判：模型倾向于把任何局部退化都归到当前正在检的标签下。" }
+      ]},
+
+    { label: "case-02 · 只命中时序，不画框",
+      src : "../clips/sample-2.mp4",
+      caption: "整段属性类问题<b>不应该画框</b>。框意味着位置声明，把框画满整帧等于夸大了断言。",
+      frames: [
+        { time: 2.0, hold: 2.4, severity: 2,
+          dimension: "生物结构异常", target: "第 8 至 17 帧 · 全画面",
+          grounding: "temporal-only · [2.0s, 4.2s] · frame 8-17",
+          reasoning: "该区间内主体轮廓整体不稳定，逐帧之间形变不连续，但异常不集中在任何一个可框定的区域。此时只输出时序区间，grounding 字段显式标为 temporal-only。空间奖励在这类样本上应当被门控掉，而不是强行给一个覆盖全帧的框。" }
+      ]},
+
+    { label: "case-03 · 单帧命中的最小记录",
+      src : "../clips/sample.mp4",
+      caption: "最小可核验记录：一个时间点、一个框、一条判据。",
+      frames: [
+        { time: 1.4, hold: 2.0, severity: 2,
+          box: {x: 24, y: 27, w: 8, h: 20},
+          dimension: "生物结构异常", target: "第 6 帧 · 远景人影",
+          reasoning: "远景人影四肢比例与躯干不成立，单帧可判。单帧命中在 4 fps 下容易被漏采：真实异常若只持续 0.2s，60 帧的采样网格有一半概率完全错过它。这类样本决定了采样率不能再降。" }
+      ]}
+  ]
+};
+
+/* ─────────────────────────────── end DATA ─────────────────────────────── */
+
+
+// Running inside an iframe? Then the modal can't just open — it would be drawn at
+// the iframe's inline size and then jump to fullscreen. Ask the parent to blow the
+// iframe up first, open on its ack. See meta.md for the parent-side handler.
+const IN_IFRAME = (window !== window.top);
+let pendingOpen = false;
+
+const overlay = document.getElementById('overlay');
+const vEl     = document.getElementById('v-el');
+const vWrap   = document.getElementById('v-wrap');
+const vLayer  = document.getElementById('v-layer');
+const vFill   = document.getElementById('v-fill');
+const vTrack  = document.getElementById('v-track');
+const vTime   = document.getElementById('v-time');
+const vPlay   = document.getElementById('v-play');
+const vMute   = document.getElementById('v-mute');
+const vJumps  = document.getElementById('v-jumps');
+const vCtrls  = document.getElementById('v-controls');
+const jBody   = document.getElementById('j-body');
+let curIdx = 0, curFrame = -1, pendingSeek = null;
+
+const demos = () => DEMO_SET.demos || [];
+const curDemo = () => demos()[curIdx];
+const fmt = s => { if(!isFinite(s)) return '0:00'; const m=Math.floor(s/60), c=Math.floor(s%60); return m+':'+String(c).padStart(2,'0'); };
+const HOLD_DEFAULT = 1.2;
+const holdOf = f => (f.hold != null ? f.hold : HOLD_DEFAULT);
+
+// ── json panel ────────────────────────────────────────────────────────────
+function groundingOf(f){
+  if (f.grounding) return f.grounding;
+  if (f.box) return 'bbox%: ['+f.box.x+','+f.box.y+','+(f.box.x+f.box.w)+','+(f.box.y+f.box.h)+']';
+  return undefined;
+}
+function frameObj(f){
+  return { dimension:f.dimension, target:f.target,
+           time: f.time!=null ? f.time.toFixed(2)+'s' : undefined,
+           grounding: groundingOf(f), severity:f.severity, reasoning:f.reasoning };
+}
+function jsonHTML(f){
+  const obj = frameObj(f);
+  const lines = ['<span class="jp">{</span>'];
+  const keys = Object.keys(obj).filter(k => obj[k] !== undefined);
+  keys.forEach((k,i) => {
+    const comma = i < keys.length-1 ? '<span class="jp">,</span>' : '';
+    const v = obj[k];
+    const val = typeof v==='number'
+      ? '<span class="jn">'+v+'</span>'
+      : '<span class="js">"'+String(v).replace(/</g,'&lt;')+'"</span>';
+    lines.push('  <span class="jk">"'+k+'"</span><span class="jp">: </span>'+val+comma);
+  });
+  lines.push('<span class="jp">}</span>');
+  return lines.join('\n');
+}
+
+// ── timeline markers + jump chips ─────────────────────────────────────────
+const demoDur = d => Math.max(...d.frames.map(f=>f.time)) + 3;
+
+function renderJumps(demo){
+  vJumps.innerHTML = '';
+  demo.frames.forEach((f,i) => {
+    const b = document.createElement('button');
+    b.className = 'jump'; b.dataset.i = i;
+    b.innerHTML = '<span class="jd" data-sev="'+f.severity+'"></span>'+f.time.toFixed(1)+'s · '+f.dimension;
+    b.onclick = () => gotoFrame(i, true);
+    vJumps.appendChild(b);
+  });
+}
+function renderMarks(demo){
+  if (!demo) return;
+  vTrack.querySelectorAll('.mark').forEach(m => m.remove());
+  // duration isn't known until loadedmetadata — place provisionally, redo later
+  const dur = vEl.duration || demoDur(demo);
+  demo.frames.forEach((f,i) => {
+    const m = document.createElement('div');
+    m.className = 'mark'; m.dataset.sev = f.severity; m.dataset.i = i;
+    m.style.left = Math.min(99, (f.time/dur)*100) + '%';
+    m.title = f.time.toFixed(1)+'s · '+f.dimension;
+    m.onclick = e => { e.stopPropagation(); gotoFrame(i, true); };
+    vTrack.appendChild(m);
+  });
+  if (curFrame >= 0) markActive(curFrame);
+}
+function markActive(i){
+  document.querySelectorAll('.jump').forEach(j => j.classList.toggle('act', +j.dataset.i === i));
+  document.querySelectorAll('.mark').forEach(m => m.classList.toggle('act', +m.dataset.i === i));
+}
+
+// ── grounding boxes ───────────────────────────────────────────────────────
+// Size the overlay to the video's real content rect. `object-fit:contain` letterboxes
+// the picture inside the wrapper, so box percentages are only meaningful against
+// that inner rect — measuring the wrapper instead offsets every box by the bars.
+function fitAnnotationLayer(){
+  const cw = vWrap.clientWidth, ch = vWrap.clientHeight;
+  const sw = vEl.videoWidth || 16, sh = vEl.videoHeight || 9;
+  if (!cw || !ch) return;                      // modal still display:none — nothing to fit
+  const scale = Math.min(cw/sw, ch/sh);
+  const w = sw*scale, h = sh*scale;
+  vLayer.style.width = w+'px';   vLayer.style.height = h+'px';
+  vLayer.style.left = (cw-w)/2+'px'; vLayer.style.top = (ch-h)/2+'px';
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// A frame's box shows while the playhead is inside [time, time+hold). The selected
+// frame also stays boxed while paused, so clicking a marker always shows the box
+// even when hold has been scrubbed past.
+function activeFrames(){
+  const demo = curDemo(); if (!demo) return [];
+  const t = vEl.currentTime || 0;
+  const set = new Set();
+  demo.frames.forEach((f,i) => { if (t >= f.time && t < f.time + holdOf(f)) set.add(i); });
+  if (vEl.paused && curFrame >= 0) set.add(curFrame);
+  return [...set];
+}
+function renderBoxes(){
+  const demo = curDemo(); if (!demo) return;
+  vLayer.innerHTML = activeFrames().map(i => {
+    const f = demo.frames[i]; if (!f.box) return '';     // no box → degrade to JSON-only
+    const b = f.box;
+    const nearTop = b.y < 8 ? ' near-top' : '';
+    return '<div class="annotation-box'+nearTop+'" data-sev="'+f.severity+'"'
+         + ' style="left:'+b.x+'%;top:'+b.y+'%;width:'+b.w+'%;height:'+b.h+'%">'
+         + '<span>'+esc(f.dimension + (f.target ? ' · '+f.target : ''))+'</span></div>';
+  }).join('');
+}
+
+// ── navigation ────────────────────────────────────────────────────────────
+function gotoFrame(i, seek){
+  curFrame = i;
+  const f = curDemo().frames[i];
+  if (seek){
+    if (isFinite(vEl.duration)){ vEl.currentTime = f.time; vEl.pause(); }
+    else pendingSeek = f.time;   // metadata not in yet — replay the seek on load
+  }
+  jBody.innerHTML = jsonHTML(f);
+  markActive(i);
+  renderBoxes();
+}
+
+function loadDemo(idx){
+  curIdx = idx; curFrame = -1; pendingSeek = null;
+  const demo = curDemo();
+  document.querySelectorAll('.demopill').forEach(p => p.classList.toggle('on', +p.dataset.i === idx));
+  document.getElementById('v-cap').innerHTML = demo.caption || '';
+  jBody.innerHTML = '<span class="jempty">点击进度条上的问题帧标记查看该帧标注。</span>';
+  // fade out before swapping src so the empty/black frame between demos doesn't flash
+  vEl.style.opacity = '0'; vLayer.style.opacity = '0';
+  vLayer.innerHTML = '';
+  vEl.src = demo.src; vEl.load(); vEl.muted = true; vMute.textContent = '🔊';
+  vFill.style.width = '0%';
+  renderJumps(demo);
+  renderMarks(demo);                       // provisional; refined on loadedmetadata
+  if (AUTOSELECT_FIRST && demo.frames.length) gotoFrame(0, true);
+}
+
+function openModal(){
+  if (!demos().length){
+    // No data: undo the fullscreen we already asked the parent for, or the user is
+    // left staring at a blank white viewport.
+    if (IN_IFRAME){
+      document.body.classList.remove('kc-expanded');
+      window.parent.postMessage({type:'kc-collapse'}, '*');
+    }
+    return;
+  }
+  document.getElementById('m-title').textContent = DEMO_SET.title || '标注数据';
+  document.getElementById('m-path').textContent  = DEMO_SET.path || '';
+  const mb = document.getElementById('m-badge');
+  if (DEMO_SET.badge){ mb.style.display=''; mb.textContent = DEMO_SET.badge;
+                       mb.style.background = DEMO_SET.badgeColor || '#5b636e'; }
+  else mb.style.display = 'none';
+
+  const strip = document.getElementById('m-strip');
+  strip.innerHTML = '';
+  demos().forEach((d,i) => {
+    const p = document.createElement('button');
+    p.className = 'demopill' + (i===0?' on':''); p.dataset.i = i; p.textContent = d.label;
+    p.onclick = () => loadDemo(i);
+    strip.appendChild(p);
+  });
+  overlay.classList.add('on');
+  if (IN_IFRAME) document.body.classList.add('kc-modal-open');   // goes transparent same frame as overlay
+  document.body.style.overflow = 'hidden';
+  loadDemo(0);
+  // the wrapper had zero size while display:none — measure it now that it's laid out
+  requestAnimationFrame(fitAnnotationLayer);
+}
+function closeModal(){
+  overlay.classList.remove('on'); vEl.pause(); document.body.style.overflow='';
+  if (IN_IFRAME){
+    document.body.classList.remove('kc-modal-open');
+    document.body.classList.remove('kc-expanded');
+    window.parent.postMessage({type:'kc-collapse'}, '*');
+  }
+}
+function requestOpen(){
+  if (!IN_IFRAME){ openModal(); return; }
+  // Two-phase: hide our own content and ask the parent to go fullscreen; open on ack.
+  pendingOpen = true;
+  document.body.classList.add('kc-expanded');    // hide host card now, before any reflow
+  window.parent.postMessage({type:'kc-expand'}, '*');
+  // parent doesn't speak this protocol → open anyway after 300ms
+  setTimeout(() => { if (pendingOpen){ pendingOpen = false; openModal(); } }, 300);
+}
+
+document.getElementById('open-demo').textContent = TRIGGER_LABEL;
+document.getElementById('open-demo').onclick = requestOpen;
+document.getElementById('m-close').onclick = closeModal;
+overlay.addEventListener('click', e => { if(e.target === overlay) closeModal(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeModal(); });
+
+// Parent confirms the iframe is now fullscreen. Its viewport update is cross-process
+// and async, so poll our own innerWidth until it catches up before opening — otherwise
+// the modal still draws small and then jumps.
+//
+// But rAF may never fire in a background tab / hidden iframe / headless capture, and
+// this is the ONLY path that opens the modal once .kc-expanded has hidden our content.
+// Without the setTimeout backstop that case is a permanent white screen.
+window.addEventListener('message', e => {
+  if (!e.data || e.data.type !== 'kc-expand-ack' || !pendingOpen) return;
+  pendingOpen = false;
+  let opened = false;
+  const go = () => { if (opened) return; opened = true; openModal(); };
+  const targetW = (e.data.vw || 0) * 0.9;      // allow 10% slack
+  let tries = 0;
+  (function tryOpen(){
+    if (opened) return;
+    if (++tries > 30 || !targetW || window.innerWidth >= targetW) go();
+    else requestAnimationFrame(tryOpen);
+  })();
+  setTimeout(go, 250);                          // hard backstop when rAF doesn't run
+});
+
+// ── video wiring ──────────────────────────────────────────────────────────
+vEl.addEventListener('loadedmetadata', () => {
+  renderMarks(curDemo());
+  vTime.textContent = '0:00 / '+fmt(vEl.duration);
+  fitAnnotationLayer();
+  if (pendingSeek != null){ vEl.currentTime = pendingSeek; pendingSeek = null; vEl.pause(); }
+});
+vEl.addEventListener('loadeddata', () => { vEl.style.opacity='1'; vLayer.style.opacity='1'; fitAnnotationLayer(); renderBoxes(); });
+vEl.addEventListener('seeked', renderBoxes);
+vEl.addEventListener('timeupdate', () => {
+  const r = vEl.currentTime / (vEl.duration || 1);
+  vFill.style.width = (r*100)+'%';
+  vTime.textContent = fmt(vEl.currentTime)+' / '+fmt(vEl.duration);
+  renderBoxes();
+});
+vEl.addEventListener('play',  () => { vPlay.textContent='⏸'; vCtrls.classList.add('show'); });
+vEl.addEventListener('pause', () => { vPlay.textContent='▶'; vCtrls.classList.remove('show'); renderBoxes(); });
+vPlay.onclick = () => { vEl.paused ? vEl.play() : vEl.pause(); };
+vEl.onclick   = () => { vEl.paused ? vEl.play() : vEl.pause(); };
+vMute.onclick = () => { vEl.muted = !vEl.muted; vMute.textContent = vEl.muted ? '🔇' : '🔊'; };
+addEventListener('resize', fitAnnotationLayer);
+
+// ── draggable progress ────────────────────────────────────────────────────
+let dragging = false;
+function seekAt(e){
+  const rect = vTrack.getBoundingClientRect();
+  const x = (e.touches ? e.touches[0].clientX : e.clientX);
+  const r = Math.max(0, Math.min(1, (x - rect.left)/rect.width));
+  if (isFinite(vEl.duration)) vEl.currentTime = r * vEl.duration;
+}
+vTrack.addEventListener('mousedown', e => { if(e.target.classList.contains('mark')) return; dragging=true; vCtrls.classList.add('show'); seekAt(e); });
+document.addEventListener('mousemove', e => { if(dragging) seekAt(e); });
+document.addEventListener('mouseup',   () => { if(dragging){ dragging=false; vCtrls.classList.remove('show'); } });
+
+// ── copy json ─────────────────────────────────────────────────────────────
+document.getElementById('j-copy').onclick = () => {
+  if (curFrame < 0) return;
+  const obj = frameObj(curDemo().frames[curFrame]);
+  Object.keys(obj).forEach(k => obj[k] === undefined && delete obj[k]);
+  navigator.clipboard.writeText(JSON.stringify(obj, null, 2)).then(() => {
+    const c = document.getElementById('j-copy'); c.classList.add('copied'); c.textContent='✓';
+    setTimeout(() => { c.classList.remove('copied'); c.textContent='⧉'; }, 1600);
+  });
+};
+
+if (OPEN_ON_LOAD) openModal();
+</script>
+</body>
+</html>
+

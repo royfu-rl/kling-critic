@@ -1,0 +1,43 @@
+<!-- 外壳标记：标题、模式切换、两条筛选栏、树容器、详情面板 -->
+<div class="wrap">
+  <div class="top">
+    <div class="top-row">
+      <div>
+        <h2>Tag Taxonomy</h2>
+      </div>
+    </div>
+    <div class="toolbar" id="toolbar">
+      <div class="filters" id="filters">
+        <button class="fbtn on" data-f="all">全部</button>
+        <button class="fbtn" data-f="subj"><span class="dot" style="background:var(--subj)"></span>主观</button>
+        <button class="fbtn" data-f="obj"><span class="dot" style="background:#9aa4af"></span>客观</button>
+        <button class="fbtn" data-f="dup"><span class="dot" style="background:var(--dup)"></span>重复</button>
+        <button class="fbtn" data-f="confusion"><span class="dot" style="background:var(--warn)"></span>边界不清晰</button>
+        <button class="fbtn" data-f="stmt"><span class="dot" style="background:var(--stmt)"></span>陈述式</button>
+      </div>
+      <div class="filters" id="pfilters">
+        <button class="fbtn on" data-f="all">全部</button>
+        <button class="fbtn" data-f="p0"><span class="dot" style="background:var(--p0)"></span>P0</button>
+        <button class="fbtn" data-f="p1"><span class="dot" style="background:var(--p1)"></span>P1</button>
+        <button class="fbtn" data-f="p2"><span class="dot" style="background:var(--p2)"></span>P2</button>
+        <button class="fbtn" data-f="ptbd"><span class="dot dot-tbd"></span>P 待补</button>
+        <!-- ing 与 P0/P1/P2 是两种维度（标注进度 vs 优先级），中间隔一条竖线 -->
+        <span class="fsep"></span>
+        <button class="fbtn" data-f="ing"><span class="dot" style="background:var(--brand)"></span>ing</button>
+      </div>
+      <div class="spacer"></div>
+      <button class="exp" id="expandAll">全部展开</button>
+      <button class="exp" id="collapseAll">全部收起</button>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="tree" id="tree"></div>
+    <aside class="panel" id="panel">
+      <!-- 首屏占位。buildTree() 一跑就会被替换成按 DEMOS 有无区分的版本（见 40-tree.js
+           的 HAS_DEMOS），所以这里只写两份输出都成立的那一半，不提 demo。 -->
+      <p class="ph">点击任意标签查看其定位。</p>
+    </aside>
+  </div>
+</div>
+

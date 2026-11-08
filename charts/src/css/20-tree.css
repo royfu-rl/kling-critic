@@ -1,0 +1,51 @@
+/* 标签树：一级/二级节点、叶子 chip、facet、徽章 */
+  /* tree nodes */
+  .n1{margin:6px 0}
+  .row{display:flex;align-items:center;gap:9px;cursor:pointer;user-select:none;border-radius:9px;padding:9px 12px;transition:.12s}
+  .row:hover{background:var(--bg-soft)}
+  .caret{width:16px;height:16px;flex:none;color:var(--ink-soft);transition:transform .18s;display:flex;align-items:center;justify-content:center}
+  .open>.row .caret{transform:rotate(90deg)}
+  .l1 .row{background:var(--brand-soft)}
+  .l1 .lbl{font-size:15px;font-weight:750}
+  .l1 .idx{font-family:var(--mono);font-size:12px;color:var(--brand);font-weight:700;margin-right:2px}
+  .count{font-size:11px;color:var(--ink-soft);font-weight:600;background:#fff;border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin-left:auto}
+  .l1 .count{background:rgba(255,255,255,.6)}
+
+  .kids{display:none;padding-left:14px;margin-left:9px;border-left:1px dashed var(--line)}
+  .open>.kids{display:block}
+
+  .l2 .row{padding:7px 11px}
+  .l2 .lbl{font-size:13.5px;font-weight:650}
+
+  /* leaf chips */
+  .chips{display:flex;flex-wrap:wrap;gap:7px;padding:6px 4px 12px 14px}
+  .chip{position:relative;display:inline-flex;flex-direction:column;gap:0;border:1px solid var(--line);background:#fff;
+        border-radius:9px;padding:6px 10px;cursor:pointer;transition:.12s;max-width:100%}
+  .chip:hover{border-color:var(--ink-soft);box-shadow:0 1px 4px rgba(0,0,0,.06);transform:translateY(-1px)}
+  .chip .name{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .chip .badge{font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:999px;letter-spacing:.02em;line-height:1.5}
+  .b-subj{background:var(--subj-soft);color:var(--subj)}
+  .b-obj{background:#eef1f4;color:var(--ink-soft)}
+  .b-warn{background:var(--warn-soft);color:var(--warn)}
+  .b-dup{background:var(--dup-soft);color:var(--dup)}
+  .chip.subj{border-color:var(--subj-line);background:var(--subj-soft)}
+  .chip.flag-confusion{border-color:var(--warn-line)}
+  .chip.flag-dup{border-color:var(--dup-line)}
+  .chip.flag-stmt{border-color:var(--stmt-line)}
+  .b-stmt{background:var(--stmt-soft);color:var(--stmt)}
+  /* hide badge icons from specific tags */
+  .chip .badge.hide-icon{display:none}
+  /* after-mode badges: 变更来源 / 已删除·已移出 */
+  .b-chg{background:var(--brand-soft);color:var(--brand)}
+  .b-gone{background:#eef1f4;color:var(--ink-soft)}
+  .chip.gone .name>span:first-child{text-decoration:line-through;text-decoration-color:var(--ink-faint)}
+  .chip.gone{border-style:dashed}
+  .chip.sel{outline:2px solid var(--brand);outline-offset:1px}
+  .chip.hasdemo .name::after{content:"▷";font-size:10px;color:var(--brand);margin-left:1px}
+  .facets{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;padding-top:6px;border-top:1px dashed var(--line)}
+  .facet{font-size:10.5px;color:var(--ink-soft);background:var(--bg-soft);border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+  .chip.dimmed{opacity:.22;filter:grayscale(.4);pointer-events:none}
+  /* ing 焦点模式：不匹配的标签不占位，空掉的二级 / 一级维度整层收掉（见 50-filters.js） */
+  .chip.hidden{display:none}
+  .l2.node.hidden,.n1.hidden{display:none}
+

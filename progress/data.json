@@ -1,0 +1,1190 @@
+{
+ "title": "Kling-Critic · 质检维度产量看板",
+ "asof": "2026-11-06",
+ "sample": true,
+ "source": "维度体系来自 data/tag-system.json（真实）；产量 / 状态 / 指标为示例值",
+ "dims": [
+  {
+   "name": "动态质量",
+   "subs": [
+    {
+     "name": "动态基础质量（物理层）",
+     "tags": [
+      {
+       "name": "生物结构异常",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 53200,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.78
+       }
+      },
+      {
+       "name": "非生物结构异常",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 38750,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.72
+       }
+      },
+      {
+       "name": "主体间穿模",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 24450,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.59
+       }
+      },
+      {
+       "name": "不符合物理规律",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.66
+       }
+      },
+      {
+       "name": "不符合现实常识",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 34850,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.8
+       }
+      },
+      {
+       "name": "崩坏",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 84400,
+       "target": 100000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.94
+       }
+      },
+      {
+       "name": "速度异常",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 46950,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.59
+       }
+      },
+      {
+       "name": "转场异变",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 85400,
+       "target": 100000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.5
+       }
+      },
+      {
+       "name": "细节纹理抖动",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 42200,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.94
+       }
+      },
+      {
+       "name": "帧间颜色染色",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 0,
+       "target": 100000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.61
+       }
+      },
+      {
+       "name": "波动扭曲",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 36800,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.84
+       }
+      },
+      {
+       "name": "明暗闪烁",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 44700,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.7
+       }
+      },
+      {
+       "name": "卡顿掉帧感",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 98400,
+       "target": 100000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.78
+       }
+      },
+      {
+       "name": "动态时序不一致",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 64700,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.75
+       }
+      },
+      {
+       "name": "光影风格时序不一致",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 38200,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.41
+       }
+      },
+      {
+       "name": "镜头晃动",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 41200,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.62
+       }
+      },
+      {
+       "name": "异常静止",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 0,
+       "target": 100000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.36
+       }
+      },
+      {
+       "name": "文字未保持",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 47200,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.74
+       }
+      },
+      {
+       "name": "其他动态质量问题",
+       "priority": "P2",
+       "rubric": "OK",
+       "done": 5700,
+       "target": 20000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.69
+       }
+      }
+     ]
+    },
+    {
+     "name": "动态美学及视听叙事（艺术层）",
+     "tags": [
+      {
+       "name": "运动不真实",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 28000,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.51
+       }
+      },
+      {
+       "name": "表演不真实",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 48500,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.77
+       }
+      },
+      {
+       "name": "叙事节奏较差",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 45300,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.71
+       }
+      },
+      {
+       "name": "叙事混乱与不完整",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 88700,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.54
+       }
+      },
+      {
+       "name": "景别视角不当",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 20750,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.67
+       }
+      },
+      {
+       "name": "运镜节奏较差",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.56
+       }
+      },
+      {
+       "name": "剪辑节奏较差",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 47950,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.91
+       }
+      },
+      {
+       "name": "创意性",
+       "priority": "P2",
+       "rubric": "OK",
+       "done": 19780,
+       "target": 20000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.94
+       }
+      }
+     ]
+    },
+    {
+     "name": "动态幅度（对比专用）",
+     "tags": [
+      {
+       "name": "动态幅度更大",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 34800,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.5
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "画面质量",
+   "subs": [
+    {
+     "name": "基础画质",
+     "tags": [
+      {
+       "name": "清晰度低",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 52900,
+       "target": 100000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.63
+       }
+      },
+      {
+       "name": "类似编解码画质现象",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.83
+       }
+      }
+     ]
+    },
+    {
+     "name": "画面基础内容",
+     "tags": [
+      {
+       "name": "曝光光影或色彩异常",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 44600,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.39
+       }
+      },
+      {
+       "name": "油腻感",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 0,
+       "target": 100000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.38
+       }
+      },
+      {
+       "name": "异常构图",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.36
+       }
+      },
+      {
+       "name": "画面杂质",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 21500,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.83
+       }
+      },
+      {
+       "name": "主体边缘异常",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 17800,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.76
+       }
+      },
+      {
+       "name": "景深与焦点问题",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 32200,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.59
+       }
+      },
+      {
+       "name": "纹理虚假",
+       "priority": "P2",
+       "rubric": "OK",
+       "done": 16680,
+       "target": 20000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.93
+       }
+      },
+      {
+       "name": "画面文字不可读",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 43750,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.52
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "指令遵循",
+   "subs": [
+    {
+     "name": "基础内容指令遵循",
+     "tags": [
+      {
+       "name": "动作缺失",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 77200,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.42
+       }
+      },
+      {
+       "name": "动作细节不足",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 34100,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.63
+       }
+      },
+      {
+       "name": "表情不符",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 18250,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.61
+       }
+      },
+      {
+       "name": "动作时序遗漏",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 83600,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.79
+       }
+      },
+      {
+       "name": "动作时序顺序错误",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 48250,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.76
+       }
+      },
+      {
+       "name": "动作速度不符",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 21850,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.69
+       }
+      },
+      {
+       "name": "运镜类型错误",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 14599,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.54
+       }
+      },
+      {
+       "name": "运镜速度不符",
+       "priority": "P2",
+       "rubric": "OK",
+       "done": 12520,
+       "target": 20000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.58
+       }
+      },
+      {
+       "name": "运镜时序遗漏",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.56
+       }
+      },
+      {
+       "name": "运镜时序顺序错误",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 17450,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.9
+       }
+      },
+      {
+       "name": "景别与拍摄视角错误",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 43000,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.36
+       }
+      },
+      {
+       "name": "动作与运镜时序错位",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 15200,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.4
+       }
+      },
+      {
+       "name": "播放速度不符",
+       "priority": "P2",
+       "rubric": "OK",
+       "done": 10779,
+       "target": 20000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.64
+       }
+      },
+      {
+       "name": "响应混淆与指代错误",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 0,
+       "target": 100000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.73
+       }
+      },
+      {
+       "name": "主体未响应",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 75600,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.41
+       }
+      },
+      {
+       "name": "文字生成错误",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 43450,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.37
+       }
+      },
+      {
+       "name": "否定词未响应",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 32300,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.75
+       }
+      },
+      {
+       "name": "环境未响应",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.67
+       }
+      },
+      {
+       "name": "风格错误",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 89000,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.54
+       }
+      },
+      {
+       "name": "空间关系与方向错误",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 28549,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.37
+       }
+      },
+      {
+       "name": "复杂文本理解错误",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 28949,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.83
+       }
+      }
+     ]
+    },
+    {
+     "name": "多镜头指令遵循",
+     "tags": [
+      {
+       "name": "shot数量遗漏",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 63400,
+       "target": 100000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.43
+       }
+      },
+      {
+       "name": "shot数量新增",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 15850,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.57
+       }
+      },
+      {
+       "name": "无切镜",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 66199,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.91
+       }
+      },
+      {
+       "name": "切镜时间点错误",
+       "priority": "P2",
+       "rubric": "OK",
+       "done": 10699,
+       "target": 20000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.93
+       }
+      },
+      {
+       "name": "镜头时序问题",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 32500,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.42
+       }
+      },
+      {
+       "name": "转场方式错误",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.87
+       }
+      },
+      {
+       "name": "镜头间内容混淆",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 62600,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.43
+       }
+      },
+      {
+       "name": "尾镜叙事缺失",
+       "priority": "P2",
+       "rubric": "OK",
+       "done": 17220,
+       "target": 20000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.36
+       }
+      },
+      {
+       "name": "镜头混乱",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 0,
+       "target": 100000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.66
+       }
+      }
+     ]
+    },
+    {
+     "name": "音频指令遵循",
+     "tags": [
+      {
+       "name": "通用指令未遵循",
+       "priority": "待补",
+       "rubric": "OK",
+       "done": 9300,
+       "target": 10000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.43
+       }
+      },
+      {
+       "name": "语音指令未遵循",
+       "priority": "待补",
+       "rubric": "OK",
+       "done": 5040,
+       "target": 10000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.45
+       }
+      },
+      {
+       "name": "音效指令未遵循",
+       "priority": "待补",
+       "rubric": "OK",
+       "done": 9790,
+       "target": 10000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.48
+       }
+      },
+      {
+       "name": "音乐指令未遵循",
+       "priority": "待补",
+       "rubric": "OK",
+       "done": 8870,
+       "target": 10000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.84
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "一致性",
+   "subs": [
+    {
+     "name": "输入图一致性（I2V）",
+     "tags": [
+      {
+       "name": "首帧画风偏离",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 31700,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.57
+       }
+      },
+      {
+       "name": "首帧色偏",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 47700,
+       "target": 50000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.45
+       }
+      },
+      {
+       "name": "首帧ID偏离",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 94000,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.59
+       }
+      }
+     ]
+    },
+    {
+     "name": "多镜头间连贯性（逻辑层）",
+     "tags": [
+      {
+       "name": "动作或表演不连贯",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 38850,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.58
+       }
+      },
+      {
+       "name": "方位不连贯",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.58
+       }
+      },
+      {
+       "name": "空间位置不连贯",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 13250,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.52
+       }
+      },
+      {
+       "name": "叙事不连贯",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 24000,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.43
+       }
+      }
+     ]
+    },
+    {
+     "name": "多镜头间一致性（不变性）",
+     "tags": [
+      {
+       "name": "场景不一致",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 47750,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.91
+       }
+      },
+      {
+       "name": "主体不一致",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 89200,
+       "target": 100000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.54
+       }
+      },
+      {
+       "name": "颜色不一致",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.95
+       }
+      },
+      {
+       "name": "风格不一致",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 25100,
+       "target": 50000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.75
+       }
+      },
+      {
+       "name": "音乐音效不一致",
+       "priority": "P1",
+       "rubric": "OK",
+       "done": 0,
+       "target": 50000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.87
+       }
+      },
+      {
+       "name": "人声不一致",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 0,
+       "target": 100000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.75
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "音频评测维度",
+   "subs": [
+    {
+     "name": "音质（底层物理）",
+     "tags": [
+      {
+       "name": "噪声感知",
+       "priority": "待补",
+       "rubric": "OK",
+       "done": 0,
+       "target": 10000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.56
+       }
+      },
+      {
+       "name": "音量异常",
+       "priority": "待补",
+       "rubric": "OK",
+       "done": 8310,
+       "target": 10000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.78
+       }
+      },
+      {
+       "name": "音频失真（爆音/断音）",
+       "priority": "待补",
+       "rubric": "OK",
+       "done": 0,
+       "target": 10000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.93
+       }
+      }
+     ]
+    },
+    {
+     "name": "音画同步",
+     "tags": [
+      {
+       "name": "口型不匹配",
+       "priority": "待补",
+       "rubric": "OK",
+       "done": 3710,
+       "target": 10000,
+       "state": "跑着",
+       "metric": {
+        "name": "p17",
+        "value": 0.62
+       }
+      },
+      {
+       "name": "音画不同步",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 60900,
+       "target": 100000,
+       "state": "停了",
+       "metric": {
+        "name": "p17",
+        "value": 0.71
+       }
+      },
+      {
+       "name": "音画不匹配",
+       "priority": "P0",
+       "rubric": "OK",
+       "done": 0,
+       "target": 100000,
+       "state": "排队",
+       "metric": {
+        "name": "p17",
+        "value": 0.45
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
