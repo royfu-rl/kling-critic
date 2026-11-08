@@ -188,6 +188,15 @@
     padding:3px 11px;cursor:pointer;transition:.15s}
   .doc .fold-all:hover{color:var(--ink);border-color:#c5cad3}
 
+  /* ---------- 未开放模块的占位 ---------- */
+  .soon{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:14px;min-height:340px;padding:60px 24px;text-align:center;
+    border:1px dashed var(--line);border-radius:var(--radius);background:var(--bg-soft)}
+  .soon-badge{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-soft);background:#fff;
+    border:1px solid var(--line);border-radius:999px;padding:7px 16px}
+  .soon-text{margin:0;font-size:14.5px;color:var(--ink-soft)}
+
   /* ---------- foldable sections ---------- */
   .doc h2.foldable{cursor:pointer;padding-left:26px;position:relative;transition:color .15s}
   .doc h2.foldable:hover{color:var(--brand)}
@@ -479,6 +488,18 @@
       breadcrumb.innerHTML = '<a href="#">← 返回 ' + byId[docData.parent].label + '</a>';
       breadcrumb.querySelector('a').onclick = (e) => { e.preventDefault(); activate(docData.parent); };
       article.appendChild(breadcrumb);
+    }
+
+    // 未开放的模块：build.py 已经把 md 清空了（正文不在这个文件里），
+    // 这里只渲染占位，不走后面那套表格 / 目录 / 公式的增强。
+    if (docData.locked) {
+      const soon = document.createElement('div');
+      soon.className = 'soon';
+      soon.innerHTML = '<div class="soon-badge">Coming Soon</div>'
+                     + '<p class="soon-text">这一节还在整理，暂未开放。</p>';
+      article.appendChild(soon);
+      docsEl.appendChild(article);
+      return;
     }
 
     // Rendered markdown body
